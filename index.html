@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>OpenFreeMap - Direct Flight Exporter</title>
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; display: flex; background: #111; color: #ececec; }
+        #map { flex-grow: 1; height: 100vh; background: #222; }
+        .sidebar { width: 350px; padding: 25px; overflow-y: auto; height: 100vh; box-sizing: border-box; border-right: 1px solid #333; background: #1a1a1a; }
+        h2 { margin: 0; font-size: 18px; color: #fff; }
+        .input-group { margin-bottom: 15px; border-bottom: 1px solid #2a2a2a; padding-bottom: 12px; }
+        label { display: block; font-size: 10px; color: #888; margin-bottom: 4px; text-transform: uppercase; font-weight: 700; }
+        input, select, button { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #252525; color: white; margin-bottom: 4px; box-sizing: border-box; font-size: 12px; }
+        button { background: #3b82f6; border: none; font-weight: 600; cursor: pointer; }
+        button:hover { background: #2563eb; }
+        .btn-capture { background: #444; font-size: 10px; }
+        .btn-preview { background: #6366f1; font-size: 10px; width: 48%; }
+        .flex-row { display: flex; gap: 8px; }
+        #startBtn { background: #10b981; font-size: 14px; margin-top: 15px; padding: 12px; }
+        #status-container { margin-top: 15px; padding: 10px; border-radius: 6px; background: #000; font-family: monospace; font-size: 10px; border: 1px solid #222; }
+        .progress-bar { height: 3px; background: #10b981; width: 0%; transition: width 0.1s; margin-top: 8px; }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <h2>Map Animator</h2>
+    <p style="font-size: 10px; color: #555; margin-bottom: 20px;">Direct Flight Engine v2.5</p>
+    
+    <div class="input-group">
+        <label>Start (Lat, Lng, Zoom, Pitch, Bearing)</label>
+        <input type="text" id="start-pos" value="-23.550,-46.633,12,0,0">
+        <button class="btn-capture" onclick="setPos('start')">Capture Current View</button>
+        <button class="btn-preview" onclick="exportSingleFrame('start')">Save Frame A</button>
+    </div>
+
+    <div class="input-group">
+        <label>End (Lat, Lng, Zoom, Pitch, Bearing)</label>
+        <input type="text" id="end-pos" value="-23.555,-46.660,16,45,90">
+        <button class="btn-capture" onclick="setPos('end')">Capture Current View</button>
+        <button class="btn-preview" onclick="exportSingleFrame('end')">Save Frame B</button>
+    </div>
+
+    <div class="flex-row">
+        <div style="flex: 1;"><label>Duration(s)</label><input type="number" id="duration" value="4"></div>
+        <div style="flex: 1;"><label>FPS</label><input type="number" id="fps" value="24"></div>
+    </div>
+
+    <div class="input-group">
+        <label>Movement Curve</label>
+        <select id="easing-type">
+            <option value="easeInOutCubic">Smooth (Cinematic)</option>
+            <option value="linear">Linear (Constant)</option>
+            <option value="easeInExpo">Accelerated</option>
+        </select>
+    </div>
+
+    <button id="startBtn" onclick="generateZip()">GENERATE 4K ZIP</button>
+    
+    <div id="status-container">
+        <div id="status-text" style="color: #10b981;">Ready.</div>
+        <div class="progress-bar" id="progress"></div>
+    </div>
+</div>
+
+<div id="map"></div>
+
+<script>
+    const map = new maplibregl.Map({
+        container: 'map',
+        style: 'https://tiles.openfreemap.org/styles/bright',
+        center: [-46.633, -23.550],
+        zoom: 12,
+        preserveDrawingBuffer: true,
+        antialias: true
+    });
+
+    map.on('style.load', () => {
+        map.getStyle().layers.forEach(l => {
+            if (l.id.includes('poi') || l.id.includes('place') || l.id.includes('building')) map.removeLayer(l.id);
+        });
+    });
+
+    const easingFunctions = {
+        linear: t => t,
+        easeInOutCubic: t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+        easeInExpo: t => t === 0 ? 0 : Math.pow(2, 10 * t - 10)
+    };
+
+    function setPos(type) {
+        const c = map.getCenter();
+        document.getElementById(`${type}-pos`).value = 
+            `${c.lat.toFixed(6)},${c.lng.toFixed(6)},${map.getZoom().toFixed(2)},${map.getPitch().toFixed(0)},${map.getBearing().toFixed(0)}`;
+    }
+
+    async function exportSingleFrame(type) {
+        const d = document.getElementById(`${type}-pos`).value.split(',').map(Number);
+        map.jumpTo({ center: [d[1], d[0]], zoom: d[2], pitch: d[3], bearing: d[4] });
+        await new Promise(r => map.once('idle', r));
+        const link = document.createElement('a');
+        link.download = `frame_${type}.png`;
+        link.href = map.getCanvas().toDataURL('image/png');
+        link.click();
+    }
+
+    async function generateZip() {
+        const start = document.getElementById('start-pos').value.split(',').map(Number);
+        const end = document.getElementById('end-pos').value.split(',').map(Number);
+        const duration = parseFloat(document.getElementById('duration').value);
+        const fps = parseInt(document.getElementById('fps').value);
+        const totalFrames = Math.ceil(duration * fps);
+        const easing = easingFunctions[document.getElementById('easing-type').value];
+        
+        const zip = new JSZip();
+        const btn = document.getElementById('startBtn');
+        btn.disabled = true;
+
+        for (let i = 0; i <= totalFrames; i++) {
+            const t = easing(i / totalFrames);
+
+            // Interpolate ALL values simultaneously for a "direct flight"
+            const lat = start[0] + (end[0] - start[0]) * t;
+            const lng = start[1] + (end[1] - start[1]) * t;
+            const zoom = start[2] + (end[2] - start[2]) * t;
+            const pitch = start[3] + (end[3] - start[3]) * t;
+            const bearing = start[4] + (end[4] - start[4]) * t;
+
+            map.jumpTo({ center: [lng, lat], zoom: zoom, pitch: pitch, bearing: bearing });
+
+            await new Promise(r => map.once('idle', r));
+
+            const imgData = map.getCanvas().toDataURL('image/png').split(',')[1];
+            zip.file(`frame_${String(i).padStart(4, '0')}.png`, imgData, {base64: true});
+
+            const percent = Math.round((i / totalFrames) * 100);
+            document.getElementById('progress').style.width = percent + "%";
+            document.getElementById('status-text').innerText = `Rendering frame ${i}/${totalFrames}`;
+        }
+
+        document.getElementById('status-text').innerText = "Generating ZIP...";
+        const content = await zip.generateAsync({type:"blob"});
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(content);
+        link.download = "map_sequence.zip";
+        link.click();
+
+        btn.disabled = false;
+        document.getElementById('status-text').innerText = "Done!";
+    }
+</script>
+
+</body>
+</html>
