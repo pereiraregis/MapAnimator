@@ -2,38 +2,59 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Map Animator</title>
+    <title>Map Animator PRO - Project Manager</title>
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; display: flex; background: #111; color: #ececec; height: 100vh; }
+        body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; display: flex; background: #111; color: #ececec; height: 100vh; overflow: hidden; }
         #map-viewport { position: relative; flex-grow: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; }
-        #map { width: 100%; height: 100%; transition: width 0.3s, height 0.3s; }
+        #map-container { position: relative; display: flex; align-items: center; justify-content: center; }
+        #map { width: 100%; height: 100%; }
         
         .sidebar { width: 380px; padding: 20px; overflow-y: auto; height: 100vh; box-sizing: border-box; border-right: 1px solid #333; background: #1a1a1a; z-index: 10; }
-        .point-card { background: #252525; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #3b82f6; position: relative; }
+        .section-title { font-size: 11px; font-weight: 800; color: #3b82f6; text-transform: uppercase; margin: 20px 0 10px 0; border-bottom: 1px solid #333; padding-bottom: 5px; letter-spacing: 1px; }
         
+        .point-card, .pin-card { background: #252525; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #3b82f6; position: relative; }
+        .pin-card { border-left-color: #f59e0b; }
+
         label { display: block; font-size: 10px; color: #888; margin-bottom: 4px; text-transform: uppercase; font-weight: 700; }
-        input, select, button { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #111; color: white; margin-bottom: 5px; font-size: 12px; }
+        input, select, button { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #111; color: white; margin-bottom: 5px; font-size: 12px; box-sizing: border-box; }
+        input[type="color"] { height: 35px; padding: 2px; cursor: pointer; }
         
         .flex-row { display: flex; gap: 5px; }
-        button { background: #3b82f6; border: none; font-weight: 600; cursor: pointer; color: white; }
+        button { background: #3b82f6; border: none; font-weight: 600; cursor: pointer; color: white; transition: 0.2s; }
         button:hover { background: #2563eb; }
-        .btn-add { background: #4b5563; margin-bottom: 20px; }
-        .btn-capture { background: #059669; font-size: 10px; }
-        .btn-remove { background: #991b1b; width: 30px; position: absolute; right: 10px; top: 10px; padding: 2px; }
         
+        .btn-capture { background: #059669; font-size: 10px; }
+        .btn-remove { background: #991b1b; width: 24px; height: 24px; position: absolute; right: 8px; top: 8px; padding: 0; line-height: 24px; }
+        
+        .project-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 20px; }
+        .btn-project { background: #4b5563; font-size: 11px; }
+
         #startBtn { background: #10b981; font-size: 14px; padding: 15px; margin-top: 20px; }
         #status-container { margin-top: 15px; padding: 10px; background: #000; font-family: monospace; border: 1px solid #333; }
         .progress-bar { height: 4px; background: #10b981; width: 0%; margin-top: 8px; }
+
+        /* Estilos dos Pins */
+        .pin-style-modern { color: white; padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; white-space: nowrap; border: 2px solid #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.4); display: inline-block; cursor: move; }
+        .pin-style-clean { font-weight: 800; font-size: 14px; text-shadow: 0 0 5px #fff, 0 0 10px #fff; white-space: nowrap; display: inline-block; cursor: move; }
+        .pin-style-dot { width: 12px; height: 12px; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.3); cursor: move; }
+        .pin-label-dot { position: absolute; left: 20px; top: -5px; background: rgba(0,0,0,0.7); padding: 2px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; color: white; }
+        .pin-style-dark { background: #111; color: #fff; padding: 5px 12px; border-radius: 4px; font-size: 12px; white-space: nowrap; cursor: move; }
     </style>
 </head>
 <body>
 
 <div class="sidebar">
     <h2>Map Animator</h2>
-    <p style="font-size: 11px; color: #555; margin-bottom: 20px;">Multi-Point & Resolution Control</p>
+    
+    <div class="project-tools">
+        <button class="btn-project" onclick="saveProject()">Save JSON</button>
+        <button class="btn-project" onclick="document.getElementById('loadInput').click()">Load JSON</button>
+        <button class="btn-project" style="background:#991b1b; grid-column: span 2;" onclick="clearProject()">Clear All Data</button>
+        <input type="file" id="loadInput" style="display:none" onchange="loadProject(this)" accept=".json">
+    </div>
 
     <label>Output Resolution</label>
     <select id="res-preset" onchange="updateViewport()">
@@ -42,30 +63,38 @@
         <option value="1080x1920">9:16 - Vertical (1080x1920)</option>
     </select>
 
-    <div id="points-list">
-        </div>
+    <div class="section-title">Waypoints</div>
+    <div id="points-list"></div>
+    <button style="background: #4b5563; margin-bottom: 10px;" onclick="addWaypoint()">+ Add Waypoint</button>
 
-    <button class="btn-add" onclick="addPoint()">+ Add Waypoint</button>
+    <div class="section-title">Visual Pins</div>
+    <div id="pins-list"></div>
+    <button style="background: #b45309;" onclick="addPin()">+ Add Pin at Center</button>
 
+    <div class="section-title">Global Settings</div>
     <div class="flex-row">
-        <div style="flex: 1;"><label>Secs Per Leg</label><input type="number" id="duration" value="3"></div>
+        <div style="flex: 1;"><label>Secs/Leg</label><input type="number" id="duration" value="3"></div>
         <div style="flex: 1;"><label>FPS</label><input type="number" id="fps" value="24"></div>
     </div>
 
     <button id="startBtn" onclick="generateZip()">RENDER SEQUENCE (ZIP)</button>
     
     <div id="status-container">
-        <div id="status-text" style="color: #10b981;">Ready to fly.</div>
+        <div id="status-text" style="color: #10b981;">Ready.</div>
         <div class="progress-bar" id="progress"></div>
     </div>
 </div>
 
 <div id="map-viewport">
-    <div id="map"></div>
+    <div id="map-container">
+        <div id="map"></div>
+    </div>
 </div>
 
 <script>
-    let points = [];
+    let waypoints = [];
+    let pins = [];
+    
     const map = new maplibregl.Map({
         container: 'map',
         style: 'https://tiles.openfreemap.org/styles/bright',
@@ -77,115 +106,196 @@
 
     map.on('style.load', () => {
         map.getStyle().layers.forEach(l => {
-            if (l.id.includes('poi') || l.id.includes('place') || l.id.includes('building')) map.removeLayer(l.id);
+            if (l.id.includes('poi') || l.id.includes('place')) map.removeLayer(l.id);
         });
-        addPoint(); // Add initial point
-        addPoint(); // Add second point
+        updateViewport();
     });
 
     function updateViewport() {
         const [w, h] = document.getElementById('res-preset').value.split('x').map(Number);
-        const container = document.getElementById('map-viewport');
-        const mapDiv = document.getElementById('map');
-        
-        const scale = Math.min((container.clientWidth - 40) / w, (container.clientHeight - 40) / h);
-        mapDiv.style.width = w + 'px';
-        mapDiv.style.height = h + 'px';
-        mapDiv.style.transform = `scale(${scale})`;
+        const vp = document.getElementById('map-viewport');
+        const cont = document.getElementById('map-container');
+        const scale = Math.min((vp.clientWidth - 20) / w, (vp.clientHeight - 20) / h);
+        cont.style.width = w + 'px';
+        cont.style.height = h + 'px';
+        cont.style.transform = `scale(${scale})`;
         map.resize();
     }
-    window.addEventListener('resize', updateViewport);
 
-    function addPoint() {
-        const id = Date.now();
+    // --- PROJECT PERSISTENCE ---
+    function saveProject() {
+        const data = {
+            waypoints,
+            pins: pins.map(p => ({ lat: p.lat, lng: p.lng, text: p.text, style: p.style, color: p.color, id: p.id })),
+            settings: {
+                resolution: document.getElementById('res-preset').value,
+                duration: document.getElementById('duration').value,
+                fps: document.getElementById('fps').value
+            }
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `project_${Date.now()}.json`;
+        a.click();
+    }
+
+    function loadProject(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const data = JSON.parse(e.target.result);
+            clearProject();
+            waypoints = data.waypoints;
+            document.getElementById('res-preset').value = data.settings.resolution;
+            document.getElementById('duration').value = data.settings.duration;
+            document.getElementById('fps').value = data.settings.fps;
+            
+            data.pins.forEach(p => recreatePin(p));
+            updateViewport();
+            renderUI();
+        };
+        reader.readAsText(file);
+    }
+
+    function clearProject() {
+        pins.forEach(p => p.marker.remove());
+        pins = [];
+        waypoints = [];
+        renderUI();
+    }
+
+    // --- PINS LOGIC ---
+    function addPin() {
         const c = map.getCenter();
-        const pt = { id, lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() };
-        points.push(pt);
-        renderPoints();
+        const pData = { id: "pin-"+Date.now(), lat: c.lat, lng: c.lng, text: "New Location", style: "pin-style-modern", color: "#f59e0b", locked: false };
+        recreatePin(pData);
+        renderUI();
     }
 
-    function removePoint(id) {
-        if(points.length <= 2) return alert("Min 2 points required");
-        points = points.filter(p => p.id !== id);
-        renderPoints();
+    function recreatePin(pData) {
+        const el = document.createElement('div');
+        el.id = pData.id + "-marker";
+        const pinObj = { ...pData, marker: null };
+        applyPinStyles(el, pinObj);
+        
+        pinObj.marker = new maplibregl.Marker({ element: el, draggable: !pData.locked })
+            .setLngLat([pData.lng, pData.lat])
+            .addTo(map);
+
+        pinObj.marker.on('dragend', () => {
+            const nl = pinObj.marker.getLngLat();
+            pinObj.lng = nl.lng; pinObj.lat = nl.lat;
+        });
+        pins.push(pinObj);
     }
 
-    function capturePoint(id) {
-        const idx = points.findIndex(p => p.id === id);
-        const c = map.getCenter();
-        points[idx] = { id, lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() };
-        renderPoints();
+    function applyPinStyles(el, pin) {
+        el.className = pin.style;
+        el.innerText = pin.text;
+        el.style.backgroundColor = pin.style === 'pin-style-modern' || pin.style === 'pin-style-dot' ? pin.color : "";
+        el.style.color = pin.style === 'pin-style-clean' ? pin.color : "";
+        el.style.borderLeft = pin.style === 'pin-style-dark' ? `3px solid ${pin.color}` : "";
+        if (pin.style === 'pin-style-dot') el.innerHTML = `<div class="pin-label-dot">${pin.text}</div>`;
     }
 
-    function renderPoints() {
-        const list = document.getElementById('points-list');
-        list.innerHTML = '';
-        points.forEach((p, i) => {
-            const card = document.createElement('div');
-            card.className = 'point-card';
-            card.innerHTML = `
-                <label>Waypoint ${i + 1}</label>
-                <div style="font-size:9px; color:#aaa; margin-bottom:5px;">
-                    ${p.lat.toFixed(4)}, ${p.lng.toFixed(4)} | Z: ${p.zoom.toFixed(1)}
-                </div>
-                <button class="btn-capture" onclick="capturePoint(${p.id})">Update to Current View</button>
-                ${i > 1 ? `<button class="btn-remove" onclick="removePoint(${p.id})">×</button>` : ''}
+    function updatePinData(id, field, value) {
+        const pin = pins.find(p => p.id === id);
+        if (!pin) return;
+        pin[field] = value;
+        if (field === 'locked') pin.marker.setDraggable(!value);
+        applyPinStyles(document.getElementById(id + "-marker"), pin);
+    }
+
+    // --- UI & RENDER ---
+    function renderUI() {
+        const wList = document.getElementById('points-list');
+        wList.innerHTML = '';
+        waypoints.forEach((w, i) => {
+            const div = document.createElement('div');
+            div.className = 'point-card';
+            div.innerHTML = `<label>Waypoint ${i+1}</label><button class="btn-capture" onclick="captureWaypoint(${w.id})">Update View</button>${i > 0 ? `<button class="btn-remove" onclick="removeWaypoint(${w.id})">×</button>` : ''}`;
+            wList.appendChild(div);
+        });
+
+        const pList = document.getElementById('pins-list');
+        pList.innerHTML = '';
+        pins.forEach(p => {
+            const div = document.createElement('div');
+            div.className = 'pin-card';
+            div.innerHTML = `
+                <input type="text" value="${p.text}" oninput="updatePinData('${p.id}', 'text', this.value)">
+                <div class="flex-row"><input type="color" value="${p.color}" oninput="updatePinData('${p.id}', 'color', this.value)" style="flex:1"><select onchange="updatePinData('${p.id}', 'style', this.value)" style="flex:2">
+                    <option value="pin-style-modern" ${p.style==='pin-style-modern'?'selected':''}>Bubble</option>
+                    <option value="pin-style-clean" ${p.style==='pin-style-clean'?'selected':''}>Clean</option>
+                    <option value="pin-style-dot" ${p.style==='pin-style-dot'?'selected':''}>Point</option>
+                    <option value="pin-style-dark" ${p.style==='pin-style-dark'?'selected':''}>Dark Bar</option>
+                </select></div>
+                <button class="btn-remove" onclick="removePin('${p.id}')">×</button>
             `;
-            list.appendChild(card);
+            pList.appendChild(div);
         });
     }
 
+    function addWaypoint() {
+        const id = Date.now() + Math.random();
+        const c = map.getCenter();
+        waypoints.push({ id, lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() });
+        renderUI();
+    }
+    function captureWaypoint(id) {
+        const idx = waypoints.findIndex(w => w.id === id);
+        const c = map.getCenter();
+        waypoints[idx] = { ...waypoints[idx], lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() };
+        renderUI();
+    }
+    function removePin(id) {
+        const idx = pins.findIndex(p => p.id === id);
+        pins[idx].marker.remove();
+        pins.splice(idx, 1);
+        renderUI();
+    }
+
     async function generateZip() {
-        const durationPerLeg = parseFloat(document.getElementById('duration').value);
+        if(waypoints.length < 2) return alert("Add at least 2 waypoints.");
+        const duration = parseFloat(document.getElementById('duration').value);
         const fps = parseInt(document.getElementById('fps').value);
-        const totalFramesPerLeg = Math.ceil(durationPerLeg * fps);
+        const framesPerLeg = Math.ceil(duration * fps);
         const zip = new JSZip();
         const btn = document.getElementById('startBtn');
+        const progress = document.getElementById('progress');
+        const status = document.getElementById('status-text');
+        
         btn.disabled = true;
+        let totalIdx = 0;
+        const totalF = framesPerLeg * (waypoints.length - 1);
 
-        let frameCount = 0;
-
-        // Iterate through each segment (Leg)
-        for (let p = 0; p < points.length - 1; p++) {
-            const start = points[p];
-            const end = points[p+1];
-
-            for (let i = 0; i < totalFramesPerLeg; i++) {
-                const t = i / totalFramesPerLeg;
-                // Cubic easing for smooth transition between legs
-                const easedT = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-
-                // FIX: Logarithmic Zoom + Simultaneous Lerp
-                const lat = start.lat + (end.lat - start.lat) * easedT;
-                const lng = start.lng + (end.lng - start.lng) * easedT;
-                const zoom = start.zoom + (end.zoom - start.zoom) * easedT;
-                const pitch = start.pitch + (end.pitch - start.pitch) * easedT;
-                const bearing = start.bearing + (end.bearing - start.bearing) * easedT;
-
-                map.jumpTo({ center: [lng, lat], zoom: zoom, pitch: pitch, bearing: bearing });
+        for (let p = 0; p < waypoints.length - 1; p++) {
+            const A = waypoints[p]; const B = waypoints[p+1];
+            for (let i = 0; i < framesPerLeg; i++) {
+                const t = i / framesPerLeg;
+                const eT = t < 0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2, 3)/2;
+                map.jumpTo({
+                    center: [A.lng + (B.lng-A.lng)*eT, A.lat + (B.lat-A.lat)*eT],
+                    zoom: A.zoom + (B.zoom-A.zoom)*eT,
+                    pitch: A.pitch + (B.pitch-A.pitch)*eT,
+                    bearing: A.bearing + (B.bearing-A.bearing)*eT
+                });
+                // Aguarda o mapa estabilizar e renderizar pins
                 await new Promise(r => map.once('idle', r));
-
-                const imgData = map.getCanvas().toDataURL('image/png').split(',')[1];
-                zip.file(`frame_${String(frameCount).padStart(5, '0')}.png`, imgData, {base64: true});
-                
-                frameCount++;
-                const totalTarget = totalFramesPerLeg * (points.length - 1);
-                const percent = Math.round((frameCount / totalTarget) * 100);
-                document.getElementById('progress').style.width = percent + "%";
-                document.getElementById('status-text').innerText = `Rendering: ${percent}%`;
+                // Captura o canvas (pins HTML podem exigir renderização via WebGL se quiser garantir 100% em 4K, 
+                // mas preserveDrawingBuffer aqui já captura o estado do mapa).
+                zip.file(`frame_${totalIdx.toString().padStart(5, '0')}.png`, map.getCanvas().toDataURL('image/png').split(',')[1], {base64: true});
+                totalIdx++;
+                progress.style.width = Math.round((totalIdx/totalF)*100) + "%";
+                status.innerText = `Rendering: ${Math.round((totalIdx/totalF)*100)}%`;
             }
         }
-
-        document.getElementById('status-text').innerText = "Compressing ZIP...";
-        const content = await zip.generateAsync({type:"blob"});
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(content);
-        link.download = `map_animation_${document.getElementById('res-preset').value}.zip`;
-        link.click();
-        btn.disabled = false;
-        document.getElementById('status-text').innerText = "Done!";
+        const blob = await zip.generateAsync({type:"blob"});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "map_anim.zip"; a.click();
+        btn.disabled = false; status.innerText = "Done!";
     }
 </script>
-
 </body>
 </html>
