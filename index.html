@@ -1,106 +1,93 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Map Animator PRO - HTML2Canvas</title>
+    <title>Map Animator PRO - Ultimate Fix</title>
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
     <style>
-        /* CORE LAYOUT */
         body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; display: flex; background: #0f0f0f; color: #ececec; height: 100vh; width: 100vw; overflow: hidden; }
         
-        /* SIDEBAR FIXED */
+        /* SIDEBAR SOBREPOSTA */
         .sidebar { 
-            width: 380px; min-width: 380px; max-width: 380px; /* Travado */
-            height: 100%; padding: 20px; box-sizing: border-box; 
-            border-right: 1px solid #333; background: #1a1a1a; 
-            overflow-y: auto; display: flex; flex-direction: column; z-index: 20; flex-shrink: 0; 
+            position: absolute; left: 0; top: 0;
+            width: 380px; height: 100%; padding: 20px; box-sizing: border-box; 
+            border-right: 1px solid #333; background: rgba(26, 26, 26, 0.98); 
+            overflow-y: auto; display: flex; flex-direction: column; 
+            z-index: 9999; 
+            box-shadow: 10px 0 30px rgba(0,0,0,0.5);
         }
-
-        /* VIEWPORT */
-        #map-viewport { flex-grow: 1; position: relative; display: flex; align-items: center; justify-content: center; background: #050505; width: 100%; height: 100%; overflow: hidden; }
         
-        /* MAP CONTAINER (Onde o HTML2Canvas vai atuar) */
-        #map-container { position: relative; box-shadow: 0 0 50px rgba(0,0,0,0.8); background: #000; }
+        #map-viewport { flex-grow: 1; position: relative; display: flex; align-items: center; justify-content: center; background: #000; width: 100vw; height: 100vh; overflow: hidden; }
+        #map-container { position: relative; transform-origin: center center; background: #000; flex-shrink: 0; width: 1920px; height: 1080px; }
         #map { width: 100%; height: 100%; }
-        
+
+        .maplibregl-ctrl-attrib, .maplibregl-ctrl-logo { display: none !important; }
+
         /* UI */
-        .section-title { font-size: 11px; font-weight: 800; color: #3b82f6; text-transform: uppercase; margin: 20px 0 10px 0; border-bottom: 1px solid #333; padding-bottom: 5px; letter-spacing: 1px; }
+        .section-title { font-size: 11px; font-weight: 800; color: #3b82f6; text-transform: uppercase; margin: 20px 0 10px 0; border-bottom: 1px solid #333; padding-bottom: 5px; }
         .pin-card, .point-card { background: #252525; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #3b82f6; position: relative; }
-        .pin-card { border-left-color: #f59e0b; }
-
         label { display: block; font-size: 9px; color: #888; margin-bottom: 2px; text-transform: uppercase; font-weight: 700; }
-        input, select, button { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #111; color: white; margin-bottom: 5px; font-size: 12px; box-sizing: border-box; }
-        input[type="color"] { height: 30px; padding: 2px; cursor: pointer; }
-        
+        input, select, button { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #111; color: white; margin-bottom: 5px; font-size: 12px; }
         .flex-row { display: flex; gap: 5px; align-items: flex-end; }
-        button { background: #3b82f6; border: none; font-weight: 600; cursor: pointer; color: white; transition: 0.2s; }
+        button { background: #3b82f6; border: none; font-weight: 600; cursor: pointer; transition: 0.2s; }
         button:hover { background: #2563eb; }
-        
-        .btn-remove { background: #991b1b; width: 20px; height: 20px; position: absolute; right: 8px; top: 8px; padding: 0; line-height: 18px; border-radius: 50%; }
-        
-        #status-container { margin-top: 15px; padding: 10px; background: #000; border: 1px solid #333; }
-        .progress-bar { height: 4px; background: #10b981; width: 0%; margin-top: 8px; transition: width 0.1s; }
-        
-        .project-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 20px; }
+        .btn-remove { background: #991b1b; width: 20px; height: 20px; position: absolute; right: 8px; top: 8px; border-radius: 50%; padding: 0; line-height: 18px; }
+        .progress-bar { height: 4px; background: #10b981; width: 0%; margin-top: 8px; }
 
-        /* --- ESTILOS DOS PINS (CSS PURO) --- */
-        .pin-style-modern { background: #f59e0b; color: white; padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; white-space: nowrap; border: 2px solid #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.5); cursor: move; transform: translate(-50%, -100%); }
-        .pin-style-clean { color: #000; font-weight: 800; font-size: 16px; text-shadow: 0 0 5px #fff, 0 0 10px #fff; white-space: nowrap; cursor: move; transform: translate(-50%, -50%); }
-        .pin-style-dot { width: 16px; height: 16px; background: #3b82f6; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.5); cursor: move; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center;}
-        .pin-label-dot { position: absolute; left: 20px; background: rgba(0,0,0,0.8); padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; color: white; pointer-events: none; }
-        .pin-style-dark { background: #111; color: #fff; padding: 5px 12px; border-radius: 4px; font-size: 12px; border-left: 3px solid #3b82f6; white-space: nowrap; cursor: move; box-shadow: 0 4px 10px rgba(0,0,0,0.5); transform: translate(-50%, -100%); }
-
-        /* Garante que os pins saiam na print */
-        .maplibregl-marker { z-index: 100; }
+        /* PINS - ESTABILIZAÇÃO E CORREÇÃO DE BORDAS */
+        .maplibregl-marker { z-index: 100; will-change: transform; transform-style: preserve-3d; backface-visibility: hidden; }
+        
+        .pin-style-modern { 
+            color: white; padding: 6px 14px; border-radius: 50px; font-size: 13px; font-weight: 700; white-space: nowrap; 
+            border: 2px solid #ffffff; 
+            background-clip: padding-box;
+            filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.5));
+            transform: translate3d(-50%, -100%, 0); 
+        }
+        .pin-style-dot { width: 14px; height: 14px; border: 2.5px solid #ffffff; border-radius: 50%; filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.5)); transform: translate3d(-50%, -50%, 0); }
+        .pin-label-dot { position: absolute; left: 22px; background: rgba(0,0,0,0.85); padding: 4px 8px; border-radius: 4px; color: white; white-space: nowrap; border: 1px solid #444; }
+        .pin-style-clean { color: #000; font-weight: 800; font-size: 16px; text-shadow: 2px 2px 0px #fff, -2px -2px 0px #fff, 2px -2px 0px #fff, -2px 2px 0px #fff; transform: translate3d(-50%, -50%, 0); white-space: nowrap; }
+        .pin-style-dark { background: #111; color: #fff; padding: 6px 12px; border-radius: 4px; font-size: 12px; border-left: 4px solid #3b82f6; transform: translate3d(-50%, -100%, 0); white-space: nowrap; filter: drop-shadow(0 4px 5px rgba(0,0,0,0.5)); }
     </style>
 </head>
 <body>
 
-<div class="sidebar">
-    <h2 style="margin:0 0 15px 0;">Map Animator</h2>
-    
-    <div class="project-tools">
+<div class="sidebar" id="sidebar">
+    <h2 style="margin:0 0 10px 0;">Map Animator PRO</h2>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 15px;">
         <button onclick="saveProject()">Save JSON</button>
         <button onclick="document.getElementById('loadInput').click()">Load JSON</button>
-        <button style="background:#991b1b; grid-column: span 2;" onclick="clearProject()">Clear All</button>
         <input type="file" id="loadInput" style="display:none" onchange="loadProject(this)" accept=".json">
     </div>
 
-    <label>Output Resolution</label>
-    <select id="res-preset" onchange="updateViewport()">
-        <option value="1920x1080">Full HD (16:9)</option>
-        <option value="3840x2160">4K Ultra HD (16:9)</option>
-        <option value="1080x1920">Vertical (9:16)</option>
-    </select>
-
     <div class="section-title">Camera Path</div>
     <div id="points-list"></div>
-    <button style="background:#4b5563;" onclick="addWaypoint()">+ Add Waypoint</button>
+    <button onclick="addWaypoint()">+ Add Waypoint</button>
 
     <div class="section-title">Visual Pins</div>
     <div id="pins-list"></div>
-    <button style="background:#b45309;" onclick="addPin()">+ Add Pin at Center</button>
+    <button style="background:#F72210" onclick="addPin()">+ Add Pin (#F72210)</button>
 
-    <div class="section-title">Render Settings</div>
-    <div class="flex-row">
-        <div style="flex:1;"><label>Secs/Leg</label><input type="number" id="duration" value="3"></div>
-        <div style="flex:1;"><label>FPS</label><input type="number" id="fps" value="30"></div>
-    </div>
-    <label>Easing</label>
+    <div class="section-title">Settings</div>
+    <label>Easing Function</label>
     <select id="easing-type">
-        <option value="easeInOutCubic">Smooth</option>
-        <option value="linear">Linear</option>
+        <option value="easeInOutCubic">Ease In Out (Cubic) - Smooth</option>
+        <option value="linear">Linear (Constant Speed)</option>
+        <option value="easeInQuad">Ease In (Accelerating)</option>
+        <option value="easeOutQuad">Ease Out (Decelerating)</option>
     </select>
-
-    <button id="startBtn" style="background:#10b981; padding:12px; font-size:14px; margin-top:10px;" onclick="generateZip()">RENDER SEQUENCE (ZIP)</button>
-    <div id="status-container">
-        <div id="status-text" style="color:#10b981; font-size:11px;">Ready.</div>
-        <div class="progress-bar" id="progress"></div>
+    <div class="flex-row">
+        <div style="flex:1"><label>Secs/Leg</label><input type="number" id="duration" value="3"></div>
+        <div style="flex:1"><label>FPS</label><input type="number" id="fps" value="30"></div>
     </div>
+    
+    <button id="startBtn" style="background:#10b981; margin-top:15px; padding:12px;" onclick="generateZip()">RENDER SEQUENCE (1920px)</button>
+    <div id="status-text" style="color:#10b981; font-size:11px; margin-top:10px;">Ready.</div>
+    <div style="background:#333; height:4px; margin-top:5px;"><div id="progress" class="progress-bar"></div></div>
 </div>
 
 <div id="map-viewport">
@@ -110,272 +97,166 @@
 <script>
     let waypoints = [];
     let pins = [];
-    
-    const easings = {
+    // 4 OPÇÕES DE EASING ADICIONAIS
+    const easings = { 
+        easeInOutCubic: t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
         linear: t => t,
-        easeInOutCubic: t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+        easeInQuad: t => t * t,
+        easeOutQuad: t => 1 - (1 - t) * (1 - t)
     };
 
     const map = new maplibregl.Map({
         container: 'map',
         style: 'https://tiles.openfreemap.org/styles/bright',
         center: [-46.633, -23.550], zoom: 12,
-        preserveDrawingBuffer: true, // Importante para html2canvas funcionar bem com WebGL
-        antialias: true
+        preserveDrawingBuffer: true, antialias: true, attributionControl: false
     });
 
-    map.on('load', () => {
-        // Remove POIs para limpar o mapa
-        map.getStyle().layers.forEach(l => { if (l.id.includes('poi') || l.id.includes('place')) map.removeLayer(l.id); });
-        updateViewport();
-    });
-
-    // --- VIEWPORT & RESIZE ---
     function updateViewport() {
-        const [w, h] = document.getElementById('res-preset').value.split('x').map(Number);
-        const cont = document.getElementById('map-container');
         const vp = document.getElementById('map-viewport');
-        const scale = Math.min((vp.clientWidth - 40) / w, (vp.clientHeight - 40) / h);
-        cont.style.width = w + 'px'; cont.style.height = h + 'px';
+        const cont = document.getElementById('map-container');
+        const scale = Math.min((vp.clientWidth - 40) / 1920, (vp.clientHeight - 40) / 1080);
         cont.style.transform = `scale(${scale})`;
         map.resize();
     }
     window.addEventListener('resize', updateViewport);
+    map.on('load', () => {
+        map.getStyle().layers.forEach(l => { if (l.id.includes('poi') || l.id.includes('place')) map.removeLayer(l.id); });
+        updateViewport();
+    });
 
-    // --- PINS (HTML/CSS) ---
+    // --- PINS (COR PADRÃO #F72210) ---
     function addPin() {
-        const id = "pin-" + Date.now();
-        const c = map.getCenter();
-        const pin = { id, lat: c.lat, lng: c.lng, text: "New Location", style: "pin-style-modern", locked: false };
+        const pin = { id: Date.now(), ...map.getCenter(), text: "Novo Local", style: "pin-style-modern", color: "#F72210" };
         createPinMarker(pin);
         pins.push(pin);
         renderUI();
     }
 
     function createPinMarker(pin) {
-        // Remove anterior se existir
         if (pin.marker) pin.marker.remove();
-
         const el = document.createElement('div');
         el.className = pin.style;
-        el.id = pin.id + "-el";
+        el.style.backgroundColor = (pin.style === 'pin-style-clean') ? 'transparent' : pin.color;
+        el.innerHTML = pin.style === 'pin-style-dot' ? `<div class="pin-label-dot">${pin.text}</div>` : pin.text;
         
-        // Renderiza o conteúdo baseado no estilo
-        if(pin.style === 'pin-style-dot') {
-            el.innerHTML = `<div class="pin-label-dot">${pin.text}</div>`;
-        } else {
-            el.innerText = pin.text;
-        }
-
-        // Cria o marker do MapLibre
-        pin.marker = new maplibregl.Marker({ element: el, draggable: !pin.locked })
-            .setLngLat([pin.lng, pin.lat])
-            .addTo(map);
-
-        pin.marker.on('dragend', () => {
-            const l = pin.marker.getLngLat();
-            pin.lng = l.lng; pin.lat = l.lat;
-        });
+        pin.marker = new maplibregl.Marker({ element: el, draggable: true })
+            .setLngLat([pin.lng, pin.lat]).addTo(map);
+        pin.marker.on('dragend', () => { const l = pin.marker.getLngLat(); pin.lng = l.lng; pin.lat = l.lat; });
     }
 
     function updatePin(id, field, value) {
         const pin = pins.find(p => p.id === id);
-        if (!pin) return;
-
-        if (field === 'locked') {
-            pin.locked = value;
-            pin.marker.setDraggable(!value);
-        } else {
+        if (pin) {
             pin[field] = value;
-            // Se mudou estilo ou texto, recria o visual
-            if (field === 'style' || field === 'text') {
-                createPinMarker(pin);
-            }
-        }
-        renderUI();
-    }
-
-    function removePin(id) {
-        const idx = pins.findIndex(p => p.id === id);
-        if(idx > -1) {
-            pins[idx].marker.remove();
-            pins.splice(idx, 1);
+            createPinMarker(pin);
             renderUI();
         }
     }
 
-    // --- WAYPOINTS ---
+    // --- RENDER ENGINE ---
+    async function captureFrame() {
+        const cont = document.getElementById('map-container');
+        const sidebar = document.getElementById('sidebar');
+        const originalTransform = cont.style.transform;
+
+        sidebar.style.visibility = 'hidden'; 
+        cont.style.transform = 'none'; // Renderiza em 1920x1080 exatos
+        
+        map.triggerRepaint();
+        await new Promise(r => map.once('idle', r));
+
+        const canvas = await html2canvas(cont, {
+            useCORS: true, scale: 1, width: 1920, height: 1080, backgroundColor: '#000',
+            logging: false, removeContainer: true
+        });
+
+        cont.style.transform = originalTransform;
+        sidebar.style.visibility = 'visible'; 
+        return canvas.toDataURL('image/png', 1.0).split(',')[1];
+    }
+
+    async function generateZip() {
+        if (waypoints.length < 2) return alert("Min 2 Waypoints");
+        const btn = document.getElementById('startBtn'); btn.disabled = true;
+        const zip = new JSZip();
+        const fps = parseInt(document.getElementById('fps').value);
+        const dur = parseFloat(document.getElementById('duration').value);
+        const framesPerLeg = Math.ceil(dur * fps);
+        const easingFunc = easings[document.getElementById('easing-type').value];
+        let totalIdx = 0;
+
+        for (let p = 0; p < waypoints.length - 1; p++) {
+            const A = waypoints[p], B = waypoints[p+1];
+            for (let i = 0; i < framesPerLeg; i++) {
+                const t = easingFunc(i / framesPerLeg);
+                map.jumpTo({
+                    center: [A.lng + (B.lng-A.lng)*t, A.lat + (B.lat-A.lat)*t],
+                    zoom: A.zoom + (B.zoom-A.zoom)*t,
+                    pitch: A.pitch + (B.pitch-A.pitch)*t,
+                    bearing: A.bearing + (B.bearing-A.bearing)*t
+                });
+                const img = await captureFrame();
+                zip.file(`frame_${totalIdx.toString().padStart(5, '0')}.png`, img, {base64: true});
+                totalIdx++;
+                document.getElementById('progress').style.width = (totalIdx/(framesPerLeg*(waypoints.length-1))*100) + "%";
+            }
+        }
+        const blob = await zip.generateAsync({type:"blob"});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "render_1920.zip"; a.click();
+        btn.disabled = false;
+    }
+
+    async function exportSingle(idx) {
+        const w = waypoints[idx];
+        map.jumpTo({ center: [w.lng, w.lat], zoom: w.zoom, pitch: w.pitch, bearing: w.bearing });
+        await new Promise(r => setTimeout(r, 400));
+        const img = await captureFrame();
+        const a = document.createElement('a'); a.href = 'data:image/png;base64,'+img; a.download=`waypoint_${idx}.png`; a.click();
+    }
+
+    // --- UI & DATA ---
     function addWaypoint() {
-        const id = Date.now(); const c = map.getCenter();
-        waypoints.push({ id, lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() });
+        const c = map.getCenter();
+        waypoints.push({ id: Date.now(), lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() });
         renderUI();
     }
-    function captureWaypoint(id) {
+
+    function updateWaypoint(id) {
         const idx = waypoints.findIndex(w => w.id === id);
         const c = map.getCenter();
         waypoints[idx] = { id, lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() };
     }
-    function removeWaypoint(id) {
-        if(waypoints.length <= 1) return;
-        waypoints = waypoints.filter(w => w.id !== id);
-        renderUI();
-    }
 
-    // --- UI RENDERER ---
     function renderUI() {
-        const pList = document.getElementById('pins-list');
-        pList.innerHTML = '';
-        pins.forEach(p => {
-            const div = document.createElement('div');
-            div.className = 'pin-card';
-            div.innerHTML = `
+        document.getElementById('points-list').innerHTML = waypoints.map((w,i) => `
+            <div class="point-card">
+                <label>Waypoint ${i+1}</label>
+                <div class="flex-row">
+                    <button onclick="updateWaypoint(${w.id})">Update View</button>
+                    <button onclick="exportSingle(${i})">PNG</button>
+                    <button class="btn-remove" onclick="waypoints.splice(${i},1);renderUI()">×</button>
+                </div>
+            </div>`).join('');
+        document.getElementById('pins-list').innerHTML = pins.map((p,i) => `
+            <div class="pin-card">
                 <input type="text" value="${p.text}" oninput="updatePin('${p.id}', 'text', this.value)">
-                <div class="flex-row" style="margin-top:5px">
+                <div class="flex-row">
                     <select onchange="updatePin('${p.id}', 'style', this.value)" style="flex:2">
                         <option value="pin-style-modern" ${p.style==='pin-style-modern'?'selected':''}>Bubble</option>
                         <option value="pin-style-clean" ${p.style==='pin-style-clean'?'selected':''}>Clean</option>
                         <option value="pin-style-dot" ${p.style==='pin-style-dot'?'selected':''}>Dot</option>
                         <option value="pin-style-dark" ${p.style==='pin-style-dark'?'selected':''}>Dark Bar</option>
                     </select>
-                    <button onclick="updatePin('${p.id}', 'locked', ${!p.locked})" style="background:${p.locked?'#991b1b':'#4b5563'}; flex:1">${p.locked ? 'Unlock' : 'Lock'}</button>
+                    <input type="color" value="${p.color}" oninput="updatePin('${p.id}', 'color', this.value)" style="flex:1; height:32px; padding:2px">
                 </div>
-                <button class="btn-remove" onclick="removePin('${p.id}')">×</button>
-            `;
-            pList.appendChild(div);
-        });
-
-        const wList = document.getElementById('points-list');
-        wList.innerHTML = '';
-        waypoints.forEach((w, i) => {
-            const div = document.createElement('div');
-            div.className = 'point-card';
-            div.innerHTML = `<label>Waypoint ${i+1}</label><div class="flex-row"><button class="btn-capture" onclick="captureWaypoint(${w.id})">Update View</button><button class="btn-single" onclick="exportSingleFrame(${w.id})">Save PNG</button></div>${i>0 ? `<button class="btn-remove" onclick="removeWaypoint(${w.id})">×</button>` : ''}`;
-            wList.appendChild(div);
-        });
+                <button class="btn-remove" onclick="pins.splice(${i},1);p.marker.remove();renderUI()">×</button>
+            </div>`).join('');
     }
 
-    // --- CAPTURA DE TELA (HTML2CANVAS) ---
-    async function captureScreen() {
-        // Captura o #map-container inteiro (Map + Pins)
-        const canvas = await html2canvas(document.getElementById('map-container'), {
-            useCORS: true, // Necessário para carregar tiles do mapa
-            allowTaint: true,
-            backgroundColor: null,
-            scale: 1 // Mantém a escala original da resolução definida
-        });
-        return canvas.toDataURL('image/png').split(',')[1];
-    }
-
-    async function exportSingleFrame(id) {
-        const w = waypoints.find(wp => wp.id === id);
-        map.jumpTo({ center: [w.lng, w.lat], zoom: w.zoom, pitch: w.pitch, bearing: w.bearing });
-        await new Promise(r => map.once('idle', r));
-        
-        // Aguarda um pequeno delay para garantir que o html2canvas pegue tudo
-        await new Promise(r => setTimeout(r, 200));
-
-        const imgData = await captureScreen();
-        
-        const link = document.createElement('a');
-        link.download = `waypoint_${id}.png`;
-        link.href = 'data:image/png;base64,' + imgData;
-        link.click();
-    }
-
-    // --- RENDER ZIP ---
-    async function generateZip() {
-        if (waypoints.length < 2) return alert("Min 2 Waypoints");
-        
-        const duration = parseFloat(document.getElementById('duration').value);
-        const fps = parseInt(document.getElementById('fps').value);
-        const framesPerLeg = Math.ceil(duration * fps);
-        const easingFunc = easings[document.getElementById('easing-type').value];
-        const zip = new JSZip();
-        
-        const btn = document.getElementById('startBtn');
-        const progress = document.getElementById('progress');
-        const status = document.getElementById('status-text');
-        
-        btn.disabled = true;
-        let totalFrameIdx = 0;
-        const totalFrames = framesPerLeg * (waypoints.length - 1);
-
-        for (let p = 0; p < waypoints.length - 1; p++) {
-            const A = waypoints[p]; const B = waypoints[p+1];
-            for (let i = 0; i < framesPerLeg; i++) {
-                const t = i / framesPerLeg;
-                const easedT = easingFunc(t);
-                
-                map.jumpTo({
-                    center: [A.lng + (B.lng-A.lng)*easedT, A.lat + (B.lat-A.lat)*easedT],
-                    zoom: A.zoom + (B.zoom-A.zoom)*easedT,
-                    pitch: A.pitch + (B.pitch-A.pitch)*easedT,
-                    bearing: A.bearing + (B.bearing-A.bearing)*easedT
-                });
-
-                await new Promise(r => map.once('idle', r));
-                
-                // Pequeno delay para garantir render do DOM
-                // await new Promise(r => setTimeout(r, 20)); 
-
-                const imgData = await captureScreen();
-                zip.file(`frame_${totalFrameIdx.toString().padStart(5, '0')}.png`, imgData, {base64: true});
-                
-                totalFrameIdx++;
-                const pct = Math.round((totalFrameIdx / totalFrames) * 100);
-                progress.style.width = pct + "%";
-                status.innerText = `Rendering: ${pct}%`;
-            }
-        }
-        
-        status.innerText = "Zipping...";
-        const blob = await zip.generateAsync({type:"blob"});
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `map_render.zip`;
-        a.click();
-        
-        btn.disabled = false;
-        status.innerText = "Done!";
-    }
-
-    // --- PROJETOS (JSON) ---
-    function saveProject() {
-        const data = { 
-            waypoints, 
-            pins: pins.map(p => ({ lat: p.lat, lng: p.lng, text: p.text, style: p.style, id: p.id, locked: p.locked })),
-            settings: { res: document.getElementById('res-preset').value, dur: document.getElementById('duration').value, fps: document.getElementById('fps').value }
-        };
-        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], {type:"application/json"}));
-        a.download = "map_project.json"; a.click();
-    }
-    function loadProject(input) {
-        const r = new FileReader();
-        r.onload = (e) => {
-            const d = JSON.parse(e.target.result);
-            pins.forEach(p => p.marker.remove()); pins = []; waypoints = [];
-            
-            d.waypoints.forEach(w => waypoints.push(w));
-            if(d.pins) d.pins.forEach(p => { 
-                const newP = {...p, marker:null}; 
-                createPinMarker(newP); 
-                pins.push(newP); 
-            });
-            
-            if(d.settings) {
-                document.getElementById('res-preset').value = d.settings.res;
-                document.getElementById('duration').value = d.settings.dur;
-                document.getElementById('fps').value = d.settings.fps;
-            }
-            if(waypoints.length) map.jumpTo({center:[waypoints[0].lng, waypoints[0].lat], zoom:waypoints[0].zoom});
-            renderUI(); updateViewport();
-        };
-        r.readAsText(input.files[0]);
-    }
-    function clearProject() {
-        if(!confirm("Clear all?")) return;
-        pins.forEach(p => p.marker.remove()); pins=[]; waypoints=[]; renderUI();
-    }
+    function saveProject() { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify({waypoints, pins: pins.map(p => ({...p, marker:null}))})], {type:"application/json"})); a.download="project.json"; a.click(); }
+    function loadProject(input) { const r = new FileReader(); r.onload = (e) => { const d = JSON.parse(e.target.result); waypoints = d.waypoints; pins.forEach(p=>p.marker?.remove()); pins=[]; d.pins.forEach(p => { createPinMarker(p); pins.push(p); }); renderUI(); updateViewport(); }; r.readAsText(input.files[0]); }
+    function clearProject() { if(confirm("Clear all?")) { pins.forEach(p => p.marker.remove()); pins=[]; waypoints=[]; renderUI(); } }
 </script>
 </body>
 </html>
