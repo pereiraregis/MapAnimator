@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Map Animator PRO - Trim Paths Edition</title>
+    <title>Map Animator PRO - Fix Scale & Delete</title>
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -10,7 +10,7 @@
 
     <style>
         body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; display: flex; background: #0f0f0f; color: #ececec; height: 100vh; width: 100vw; overflow: hidden; }
-        .sidebar { position: absolute; left: 0; top: 0; width: 380px; height: 100%; padding: 20px; box-sizing: border-box; border-right: 1px solid #333; background: rgba(26, 26, 26, 0.98); overflow-y: auto; z-index: 9999; box-shadow: 10px 0 30px rgba(0,0,0,0.5); }
+        .sidebar { position: absolute; left: 0; top: 0; width: 380px; height: 100%; padding: 20px; box-sizing: border-box; border-right: 1px solid #333; background: rgba(26, 26, 26, 0.98); overflow-y: auto; display: flex; flex-direction: column; z-index: 9999; box-shadow: 10px 0 30px rgba(0,0,0,0.5); }
         #map-viewport { flex-grow: 1; position: relative; display: flex; align-items: center; justify-content: center; background: #000; width: 100vw; height: 100vh; overflow: hidden; }
         #map-container { position: relative; transform-origin: center center; background: #000; flex-shrink: 0; width: 1920px; height: 1080px; }
         #map { width: 100%; height: 100%; }
@@ -19,15 +19,20 @@
         .card { background: #252525; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #3b82f6; position: relative; }
         label { display: block; font-size: 9px; color: #888; margin-bottom: 2px; text-transform: uppercase; font-weight: 700; }
         input, select, button { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #111; color: white; margin-bottom: 5px; font-size: 12px; }
+        input[type="range"] { padding: 0; height: 4px; background: #444; cursor: pointer; }
         .flex-row { display: flex; gap: 5px; align-items: flex-end; }
         button { background: #3b82f6; border: none; font-weight: 600; cursor: pointer; transition: 0.2s; }
-        button:hover { background: #2563eb; }
-        .btn-remove { background: #991b1b; width: 20px; height: 20px; position: absolute; right: 8px; top: 8px; border-radius: 50%; padding: 0; line-height: 18px; }
-        .progress-bar { height: 4px; background: #10b981; width: 0%; margin-top: 8px; }
-        .maplibregl-marker { z-index: 100; will-change: transform; transform-style: preserve-3d; backface-visibility: hidden; }
-        .pin-style-modern { color: white; padding: 6px 14px; border-radius: 50px; font-size: 13px; font-weight: 700; white-space: nowrap; border: 2px solid #ffffff; background-clip: padding-box; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.5)); transform: translate3d(-50%, -100%, 0); }
-        .pin-style-dot { width: 14px; height: 14px; border: 2.5px solid #ffffff; border-radius: 50%; filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.5)); transform: translate3d(-50%, -50%, 0); }
+        .btn-remove { background: #991b1b; width: 22px; height: 22px; position: absolute; right: 8px; top: 8px; border-radius: 50%; padding: 0; line-height: 20px; z-index: 10; }
+
+        /* FIX SCALE: Wrapper para isolar o scale do posicionamento do MapLibre */
+        .pin-wrapper { will-change: transform; pointer-events: none; }
+        .pin-inner { pointer-events: auto; transform-origin: center bottom; }
+
+        .pin-style-modern { color: white; padding: 6px 14px; border-radius: 50px; font-size: 13px; font-weight: 700; white-space: nowrap; border: 2px solid #ffffff; background-clip: padding-box; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.4)); }
+        .pin-style-dot { width: 14px; height: 14px; border: 2.5px solid #ffffff; border-radius: 50%; filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.4)); transform-origin: center center !important; }
         .pin-label-dot { position: absolute; left: 22px; background: rgba(0,0,0,0.85); padding: 4px 8px; border-radius: 4px; color: white; white-space: nowrap; border: 1px solid #444; }
+        .pin-style-clean { color: #000; font-weight: 800; font-size: 16px; text-shadow: 2px 2px 0px #fff, -2px -2px 0px #fff, 2px -2px 0px #fff, -2px 2px 0px #fff; white-space: nowrap; transform-origin: center center !important; }
+        .pin-style-dark { background: #111; color: #fff; padding: 6px 12px; border-radius: 4px; font-size: 12px; border-left: 4px solid #3b82f6; white-space: nowrap; filter: drop-shadow(0 4px 5px rgba(0,0,0,0.5)); }
     </style>
 </head>
 <body>
@@ -39,6 +44,13 @@
         <button onclick="document.getElementById('loadInput').click()">Load JSON</button>
         <input type="file" id="loadInput" style="display:none" onchange="loadProject(this)" accept=".json">
     </div>
+
+    <label>Output Resolution</label>
+    <select id="res-preset" onchange="updateViewport()">
+        <option value="1920x1080">Full HD (16:9)</option>
+        <option value="3840x2160">4K Ultra HD (16:9)</option>
+        <option value="1080x1920">Vertical (9:16)</option>
+    </select>
 
     <div class="section-title">Draw Path - Trim Effect</div>
     <div class="flex-row">
@@ -67,9 +79,8 @@
         <div style="flex:1"><label>FPS</label><input type="number" id="fps" value="30"></div>
     </div>
     
-    <button id="startBtn" style="background:#10b981; margin-top:15px; padding:12px;" onclick="generateZip()">RENDER SEQUENCE (1920px)</button>
+    <button id="startBtn" style="background:#10b981; margin-top:15px; padding:12px;" onclick="generateZip()">RENDER SEQUENCE (ZIP)</button>
     <div id="status-text" style="color:#10b981; font-size:11px; margin-top:10px;">Ready.</div>
-    <div style="background:#333; height:4px; margin-top:5px;"><div id="progress" style="height:100%; width:0%; background:#10b981;"></div></div>
 </div>
 
 <div id="map-viewport">
@@ -96,123 +107,110 @@
 
     map.on('load', () => {
         map.getStyle().layers.forEach(l => { if (l.id.includes('poi') || l.id.includes('place')) map.removeLayer(l.id); });
-        
-        map.addSource('route-source', {
-            type: 'geojson',
-            data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } }
-        });
-
-        map.addLayer({
-            id: 'route-line',
-            type: 'line',
-            source: 'route-source',
-            paint: {
-                'line-color': '#F72210',
-                'line-width': 5,
-                'line-dasharray': [2, 2]
-            }
-        });
-
+        map.addSource('route-source', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } } });
+        map.addLayer({ id: 'route-line', type: 'line', source: 'route-source', paint: { 'line-color': '#F72210', 'line-width': 5, 'line-dasharray': [2, 2] } });
         updateViewport();
     });
 
-    function toggleDrawing() {
-        isDrawing = !isDrawing;
-        const btn = document.getElementById('drawBtn');
-        btn.style.background = isDrawing ? '#10b981' : '#4b5563';
-        btn.innerText = isDrawing ? 'Clique no Mapa' : 'Ativar Desenho';
-        map.getCanvas().style.cursor = isDrawing ? 'crosshair' : '';
-    }
-
-    map.on('click', (e) => {
-        if (!isDrawing) return;
-        customPathCoords.push([e.lngLat.lng, e.lngLat.lat]);
-        syncPathLayer();
-    });
-
-    function syncPathLayer(partialCoords = null) {
-        const color = document.getElementById('path-color').value;
-        const coords = partialCoords || customPathCoords;
-        map.setPaintProperty('route-line', 'line-color', color);
-        map.getSource('route-source').setData({
-            type: 'Feature',
-            geometry: { type: 'LineString', coordinates: coords.length > 1 ? coords : [] }
-        });
-    }
-
-    function clearPath() { customPathCoords = []; syncPathLayer(); }
-
     function updateViewport() {
+        const [w, h] = document.getElementById('res-preset').value.split('x').map(Number);
         const vp = document.getElementById('map-viewport');
         const cont = document.getElementById('map-container');
-        const scale = Math.min((vp.clientWidth - 40) / 1920, (vp.clientHeight - 40) / 1080);
+        cont.style.width = w + 'px'; cont.style.height = h + 'px';
+        const scale = Math.min((vp.clientWidth - 40) / w, (vp.clientHeight - 40) / h);
         cont.style.transform = `scale(${scale})`;
         map.resize();
     }
     window.addEventListener('resize', updateViewport);
 
+    function toggleDrawing() { isDrawing = !isDrawing; document.getElementById('drawBtn').style.background = isDrawing ? '#10b981' : '#4b5563'; }
+    map.on('click', (e) => { if (!isDrawing) return; customPathCoords.push([e.lngLat.lng, e.lngLat.lat]); syncPathLayer(); });
+    function syncPathLayer(pCoords = null) { const c = pCoords || customPathCoords; map.setPaintProperty('route-line', 'line-color', document.getElementById('path-color').value); map.getSource('route-source').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: c.length > 1 ? c : [] } }); }
+    function clearPath() { customPathCoords = []; syncPathLayer(); }
+
     function addPin() {
-        const pin = { id: Date.now(), ...map.getCenter(), text: "Novo Local", style: "pin-style-modern", color: "#F72210" };
-        createPinMarker(pin);
+        const pin = { id: Date.now(), ...map.getCenter(), text: "Novo Local", style: "pin-style-modern", color: "#F72210", scale: 1.0 };
         pins.push(pin);
+        createPinMarker(pin);
         renderUI();
     }
 
     function createPinMarker(pin) {
         if (pin.marker) pin.marker.remove();
-        const el = document.createElement('div');
-        el.className = pin.style;
-        el.style.backgroundColor = (pin.style === 'pin-style-clean') ? 'transparent' : pin.color;
-        el.innerHTML = pin.style === 'pin-style-dot' ? `<div class="pin-label-dot">${pin.text}</div>` : pin.text;
-        pin.marker = new maplibregl.Marker({ element: el, draggable: true }).setLngLat([pin.lng, pin.lat]).addTo(map);
+        
+        // Wrapper para o MapLibre gerenciar posição
+        const wrapper = document.createElement('div');
+        wrapper.className = 'pin-wrapper';
+        
+        // Elemento interno para gerenciar a escala
+        const inner = document.createElement('div');
+        inner.className = `pin-inner ${pin.style}`;
+        inner.style.backgroundColor = (pin.style === 'pin-style-clean') ? 'transparent' : pin.color;
+        inner.style.transform = `scale(${pin.scale})`;
+        inner.innerHTML = pin.style === 'pin-style-dot' ? `<div class="pin-label-dot">${pin.text}</div>` : pin.text;
+        
+        wrapper.appendChild(inner);
+        
+        const anchor = (pin.style === 'pin-style-modern' || pin.style === 'pin-style-dark') ? 'bottom' : 'center';
+        pin.marker = new maplibregl.Marker({ element: wrapper, draggable: true, anchor: anchor })
+            .setLngLat([pin.lng, pin.lat]).addTo(map);
+        
         pin.marker.on('dragend', () => { const l = pin.marker.getLngLat(); pin.lng = l.lng; pin.lat = l.lat; });
+    }
+
+    function removePin(id) {
+        const idx = pins.findIndex(p => p.id === id);
+        if (idx !== -1) {
+            pins[idx].marker.remove();
+            pins.splice(idx, 1);
+            renderUI();
+        }
     }
 
     function updatePin(id, field, value) {
         const pin = pins.find(p => p.id === id);
-        if (pin) { pin[field] = value; createPinMarker(pin); renderUI(); }
+        if (pin) { 
+            pin[field] = value; 
+            createPinMarker(pin); 
+            // Não chamamos renderUI aqui para o slider não perder o foco, 
+            // apenas atualizamos o texto da label se necessário
+            if(field === 'scale') {
+                const label = document.getElementById(`label-scale-${id}`);
+                if(label) label.innerText = `Tamanho (Scale: ${value})`;
+            }
+        }
     }
 
     async function captureFrame() {
         const cont = document.getElementById('map-container');
+        const [w, h] = document.getElementById('res-preset').value.split('x').map(Number);
         const sidebar = document.getElementById('sidebar');
         const originalTransform = cont.style.transform;
         sidebar.style.visibility = 'hidden'; 
         cont.style.transform = 'none';
         map.triggerRepaint();
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); 
         await new Promise(r => map.once('idle', r));
-        const canvas = await html2canvas(cont, { useCORS: true, scale: 1, width: 1920, height: 1080, backgroundColor: '#000', logging: false });
+        const canvas = await html2canvas(cont, { useCORS: true, scale: 1, width: w, height: h, backgroundColor: '#000', logging: false });
         cont.style.transform = originalTransform;
         sidebar.style.visibility = 'visible'; 
-        return canvas.toDataURL('image/png', 1.0).split(',')[1];
+        return canvas;
     }
 
-    // Função auxiliar para interpolar pontos da linha (Trim Path)
     function getTrimmedPath(coords, progress) {
-        if (coords.length < 2) return coords;
-        if (progress >= 1) return coords;
-        
-        let totalDist = 0;
-        let segmentDists = [];
+        if (coords.length < 2 || progress >= 1) return coords;
+        let totalDist = 0, segmentDists = [];
         for (let i = 0; i < coords.length - 1; i++) {
             let d = Math.sqrt(Math.pow(coords[i+1][0]-coords[i][0], 2) + Math.pow(coords[i+1][1]-coords[i][1], 2));
-            segmentDists.push(d);
-            totalDist += d;
+            segmentDists.push(d); totalDist += d;
         }
-
-        let targetDist = totalDist * progress;
-        let currentDist = 0;
-        let newCoords = [coords[0]];
-
+        let targetDist = totalDist * progress, currentDist = 0, newCoords = [coords[0]];
         for (let i = 0; i < segmentDists.length; i++) {
             if (currentDist + segmentDists[i] <= targetDist) {
-                newCoords.push(coords[i+1]);
-                currentDist += segmentDists[i];
+                newCoords.push(coords[i+1]); currentDist += segmentDists[i];
             } else {
                 let remain = (targetDist - currentDist) / segmentDists[i];
-                let lastLng = coords[i][0] + (coords[i+1][0] - coords[i][0]) * remain;
-                let lastLat = coords[i][1] + (coords[i+1][1] - coords[i][1]) * remain;
-                newCoords.push([lastLng, lastLat]);
+                newCoords.push([coords[i][0] + (coords[i+1][0] - coords[i][0]) * remain, coords[i][1] + (coords[i+1][1] - coords[i][1]) * remain]);
                 break;
             }
         }
@@ -235,100 +233,47 @@
             for (let i = 0; i < framesPerLeg; i++) {
                 const legT = i / framesPerLeg;
                 const easedLegT = easingFunc(legT);
-                
-                // Progresso global para o efeito Trim (0 a 1 em toda a animação)
-                // Conclui em 90% do tempo total
-                const globalProgress = Math.min(1, (totalIdx / totalFrames) / 0.9);
-
-                map.jumpTo({
-                    center: [A.lng + (B.lng-A.lng)*easedLegT, A.lat + (B.lat-A.lat)*easedLegT],
-                    zoom: A.zoom + (B.zoom-A.zoom)*easedLegT,
-                    pitch: A.pitch + (B.pitch-A.pitch)*easedLegT,
-                    bearing: A.bearing + (B.bearing-A.bearing)*easedLegT
-                });
-
-                // Atualiza o rastro da linha (Trim Path)
-                if (customPathCoords.length > 1) {
-                    const currentVisiblePath = getTrimmedPath(customPathCoords, globalProgress);
-                    syncPathLayer(currentVisiblePath);
-                }
-
-                const img = await captureFrame();
-                zip.file(`frame_${totalIdx.toString().padStart(5, '0')}.png`, img, {base64: true});
+                const gProgress = Math.min(1, (totalIdx / totalFrames) / 0.9);
+                map.jumpTo({ center: [A.lng + (B.lng-A.lng)*easedLegT, A.lat + (B.lat-A.lat)*easedLegT], zoom: A.zoom + (B.zoom-A.zoom)*easedLegT, pitch: A.pitch + (B.pitch-A.pitch)*easedLegT, bearing: A.bearing + (B.bearing-A.bearing)*easedLegT });
+                if (customPathCoords.length > 1) syncPathLayer(getTrimmedPath(customPathCoords, gProgress));
+                const canvas = await captureFrame();
+                zip.file(`frame_${totalIdx.toString().padStart(5, '0')}.png`, canvas.toDataURL('image/png').split(',')[1], {base64: true});
                 totalIdx++;
-                document.getElementById('progress').style.width = (totalIdx/totalFrames*100) + "%";
+                document.getElementById('status-text').innerText = `Rendering: ${Math.round((totalIdx/totalFrames)*100)}%`;
             }
         }
         const blob = await zip.generateAsync({type:"blob"});
-        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "render_1920_trim.zip"; a.click();
-        btn.disabled = false;
-        syncPathLayer(); // Restaura linha completa no editor
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "render.zip"; a.click();
+        btn.disabled = false; syncPathLayer();
     }
 
-    function addWaypoint() {
-        const c = map.getCenter();
-        waypoints.push({ id: Date.now(), lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() });
-        renderUI();
-    }
-
-    function updateWaypoint(id) {
-        const idx = waypoints.findIndex(w => w.id === id);
-        const c = map.getCenter();
-        waypoints[idx] = { ...waypoints[idx], lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() };
-        alert("Waypoint atualizado!");
-    }
-
-    async function exportSingle(idx) {
-        const w = waypoints[idx];
-        map.jumpTo({ center: [w.lng, w.lat], zoom: w.zoom, pitch: w.pitch, bearing: w.bearing });
-        await new Promise(r => setTimeout(r, 500));
-        const img = await captureFrame();
-        const a = document.createElement('a'); a.href = 'data:image/png;base64,'+img; a.download=`waypoint_${idx}.png`; a.click();
-    }
-
+    function addWaypoint() { const c = map.getCenter(); waypoints.push({ id: Date.now(), lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }); renderUI(); }
+    function updateWaypoint(id) { const idx = waypoints.findIndex(w => w.id === id); const c = map.getCenter(); waypoints[idx] = { ...waypoints[idx], lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }; }
+    async function exportSingle(idx) { const w = waypoints[idx]; map.jumpTo({ center: [w.lng, w.lat], zoom: w.zoom, pitch: w.pitch, bearing: w.bearing }); await new Promise(r => setTimeout(r, 500)); const c = await captureFrame(); const a = document.createElement('a'); a.href = c.toDataURL('image/png'); a.download=`waypoint_${idx}.png`; a.click(); }
+    
     function renderUI() {
-        document.getElementById('points-list').innerHTML = waypoints.map((w,i) => `
+        document.getElementById('points-list').innerHTML = waypoints.map((w,i) => `<div class="card"><label>Waypoint ${i+1}</label><div class="flex-row"><button onclick="updateWaypoint(${w.id})">Update</button><button onclick="exportSingle(${i})">PNG</button><button class="btn-remove" onclick="waypoints = waypoints.filter(wp => wp.id !== ${w.id}); renderUI()">×</button></div></div>`).join('');
+        
+        document.getElementById('pins-list').innerHTML = pins.map((p) => `
             <div class="card">
-                <label>Waypoint ${i+1}</label>
-                <div class="flex-row">
-                    <button onclick="updateWaypoint(${w.id})">Update</button>
-                    <button onclick="exportSingle(${i})">PNG</button>
-                    <button class="btn-remove" onclick="waypoints.splice(${i},1);renderUI()">×</button>
-                </div>
-            </div>`).join('');
-        document.getElementById('pins-list').innerHTML = pins.map((p,i) => `
-            <div class="card">
+                <button class="btn-remove" onclick="removePin(${p.id})">×</button>
                 <input type="text" value="${p.text}" oninput="updatePin('${p.id}', 'text', this.value)">
+                <label id="label-scale-${p.id}">Tamanho (Scale: ${p.scale})</label>
+                <input type="range" min="0.5" max="3" step="0.1" value="${p.scale}" oninput="updatePin('${p.id}', 'scale', parseFloat(this.value))">
                 <div class="flex-row">
                     <select onchange="updatePin('${p.id}', 'style', this.value)" style="flex:2">
                         <option value="pin-style-modern" ${p.style==='pin-style-modern'?'selected':''}>Bubble</option>
+                        <option value="pin-style-clean" ${p.style==='pin-style-clean'?'selected':''}>Clean</option>
                         <option value="pin-style-dot" ${p.style==='pin-style-dot'?'selected':''}>Dot</option>
+                        <option value="pin-style-dark" ${p.style==='pin-style-dark'?'selected':''}>Dark Bar</option>
                     </select>
                     <input type="color" value="${p.color}" oninput="updatePin('${p.id}', 'color', this.value)" style="flex:1; height:32px; padding:2px">
                 </div>
-                <button class="btn-remove" onclick="pins.splice(${i},1);p.marker.remove();renderUI()">×</button>
             </div>`).join('');
     }
-
-    function saveProject() { 
-        const a = document.createElement('a'); 
-        a.href = URL.createObjectURL(new Blob([JSON.stringify({waypoints, pins: pins.map(p => ({...p, marker:null})), path: customPathCoords})], {type:"application/json"})); 
-        a.download="project.json"; a.click(); 
-    }
     
-    function loadProject(input) { 
-        const r = new FileReader(); 
-        r.onload = (e) => { 
-            const d = JSON.parse(e.target.result); 
-            waypoints = d.waypoints; 
-            pins.forEach(p=>p.marker?.remove()); pins=[]; 
-            d.pins.forEach(p => { createPinMarker(p); pins.push(p); }); 
-            if(d.path) customPathCoords = d.path;
-            if(waypoints.length > 0) map.jumpTo({ center: [waypoints[0].lng, waypoints[0].lat], zoom: waypoints[0].zoom, pitch: waypoints[0].pitch, bearing: waypoints[0].bearing });
-            syncPathLayer(); renderUI(); updateViewport(); 
-        }; 
-        r.readAsText(input.files[0]); 
-    }
+    function saveProject() { const data = { waypoints, pins: pins.map(p => ({...p, marker:null})), path: customPathCoords }; const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], {type:"application/json"})); a.download="project.json"; a.click(); }
+    function loadProject(input) { const r = new FileReader(); r.onload = (e) => { const d = JSON.parse(e.target.result); waypoints = d.waypoints; pins.forEach(p=>p.marker?.remove()); pins=[]; d.pins.forEach(p => { pins.push(p); createPinMarker(p); }); if(d.path) customPathCoords = d.path; if(waypoints.length > 0) map.jumpTo({ center: [waypoints[0].lng, waypoints[0].lat], zoom: waypoints[0].zoom, pitch: waypoints[0].pitch, bearing: waypoints[0].bearing }); syncPathLayer(); renderUI(); updateViewport(); }; r.readAsText(input.files[0]); }
 </script>
 </body>
 </html>
