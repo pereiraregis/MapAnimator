@@ -2,74 +2,70 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>OpenFreeMap - Direct Flight Exporter</title>
+    <title>OpenFreeMap - Multi-Point Flight Engine</title>
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    
     <style>
-        body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; display: flex; background: #111; color: #ececec; }
-        #map { flex-grow: 1; height: 100vh; background: #222; }
-        .sidebar { width: 350px; padding: 25px; overflow-y: auto; height: 100vh; box-sizing: border-box; border-right: 1px solid #333; background: #1a1a1a; }
-        h2 { margin: 0; font-size: 18px; color: #fff; }
-        .input-group { margin-bottom: 15px; border-bottom: 1px solid #2a2a2a; padding-bottom: 12px; }
+        body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; display: flex; background: #111; color: #ececec; height: 100vh; }
+        #map-viewport { position: relative; flex-grow: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; }
+        #map { width: 100%; height: 100%; transition: width 0.3s, height 0.3s; }
+        
+        .sidebar { width: 380px; padding: 20px; overflow-y: auto; height: 100vh; box-sizing: border-box; border-right: 1px solid #333; background: #1a1a1a; z-index: 10; }
+        .point-card { background: #252525; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #3b82f6; position: relative; }
+        
         label { display: block; font-size: 10px; color: #888; margin-bottom: 4px; text-transform: uppercase; font-weight: 700; }
-        input, select, button { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #252525; color: white; margin-bottom: 4px; box-sizing: border-box; font-size: 12px; }
-        button { background: #3b82f6; border: none; font-weight: 600; cursor: pointer; }
+        input, select, button { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #111; color: white; margin-bottom: 5px; font-size: 12px; }
+        
+        .flex-row { display: flex; gap: 5px; }
+        button { background: #3b82f6; border: none; font-weight: 600; cursor: pointer; color: white; }
         button:hover { background: #2563eb; }
-        .btn-capture { background: #444; font-size: 10px; }
-        .btn-preview { background: #6366f1; font-size: 10px; width: 48%; }
-        .flex-row { display: flex; gap: 8px; }
-        #startBtn { background: #10b981; font-size: 14px; margin-top: 15px; padding: 12px; }
-        #status-container { margin-top: 15px; padding: 10px; border-radius: 6px; background: #000; font-family: monospace; font-size: 10px; border: 1px solid #222; }
-        .progress-bar { height: 3px; background: #10b981; width: 0%; transition: width 0.1s; margin-top: 8px; }
+        .btn-add { background: #4b5563; margin-bottom: 20px; }
+        .btn-capture { background: #059669; font-size: 10px; }
+        .btn-remove { background: #991b1b; width: 30px; position: absolute; right: 10px; top: 10px; padding: 2px; }
+        
+        #startBtn { background: #10b981; font-size: 14px; padding: 15px; margin-top: 20px; }
+        #status-container { margin-top: 15px; padding: 10px; background: #000; font-family: monospace; border: 1px solid #333; }
+        .progress-bar { height: 4px; background: #10b981; width: 0%; margin-top: 8px; }
     </style>
 </head>
 <body>
 
 <div class="sidebar">
-    <h2>Map Animator</h2>
-    <p style="font-size: 10px; color: #555; margin-bottom: 20px;">Direct Flight Engine v2.5</p>
-    
-    <div class="input-group">
-        <label>Start (Lat, Lng, Zoom, Pitch, Bearing)</label>
-        <input type="text" id="start-pos" value="-23.550,-46.633,12,0,0">
-        <button class="btn-capture" onclick="setPos('start')">Capture Current View</button>
-        <button class="btn-preview" onclick="exportSingleFrame('start')">Save Frame A</button>
-    </div>
+    <h2>Flight Engine v3.0</h2>
+    <p style="font-size: 11px; color: #555; margin-bottom: 20px;">Multi-Point & Resolution Control</p>
 
-    <div class="input-group">
-        <label>End (Lat, Lng, Zoom, Pitch, Bearing)</label>
-        <input type="text" id="end-pos" value="-23.555,-46.660,16,45,90">
-        <button class="btn-capture" onclick="setPos('end')">Capture Current View</button>
-        <button class="btn-preview" onclick="exportSingleFrame('end')">Save Frame B</button>
-    </div>
+    <label>Output Resolution</label>
+    <select id="res-preset" onchange="updateViewport()">
+        <option value="1920x1080">16:9 - Full HD (1920x1080)</option>
+        <option value="3840x2160">16:9 - 4K Ultra HD (3840x2160)</option>
+        <option value="1080x1920">9:16 - Vertical (1080x1920)</option>
+    </select>
+
+    <div id="points-list">
+        </div>
+
+    <button class="btn-add" onclick="addPoint()">+ Add Waypoint</button>
 
     <div class="flex-row">
-        <div style="flex: 1;"><label>Duration(s)</label><input type="number" id="duration" value="4"></div>
+        <div style="flex: 1;"><label>Secs Per Leg</label><input type="number" id="duration" value="3"></div>
         <div style="flex: 1;"><label>FPS</label><input type="number" id="fps" value="24"></div>
     </div>
 
-    <div class="input-group">
-        <label>Movement Curve</label>
-        <select id="easing-type">
-            <option value="easeInOutCubic">Smooth (Cinematic)</option>
-            <option value="linear">Linear (Constant)</option>
-            <option value="easeInExpo">Accelerated</option>
-        </select>
-    </div>
-
-    <button id="startBtn" onclick="generateZip()">GENERATE 4K ZIP</button>
+    <button id="startBtn" onclick="generateZip()">RENDER SEQUENCE (ZIP)</button>
     
     <div id="status-container">
-        <div id="status-text" style="color: #10b981;">Ready.</div>
+        <div id="status-text" style="color: #10b981;">Ready to fly.</div>
         <div class="progress-bar" id="progress"></div>
     </div>
 </div>
 
-<div id="map"></div>
+<div id="map-viewport">
+    <div id="map"></div>
+</div>
 
 <script>
+    let points = [];
     const map = new maplibregl.Map({
         container: 'map',
         style: 'https://tiles.openfreemap.org/styles/bright',
@@ -83,71 +79,109 @@
         map.getStyle().layers.forEach(l => {
             if (l.id.includes('poi') || l.id.includes('place') || l.id.includes('building')) map.removeLayer(l.id);
         });
+        addPoint(); // Add initial point
+        addPoint(); // Add second point
     });
 
-    const easingFunctions = {
-        linear: t => t,
-        easeInOutCubic: t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
-        easeInExpo: t => t === 0 ? 0 : Math.pow(2, 10 * t - 10)
-    };
+    function updateViewport() {
+        const [w, h] = document.getElementById('res-preset').value.split('x').map(Number);
+        const container = document.getElementById('map-viewport');
+        const mapDiv = document.getElementById('map');
+        
+        const scale = Math.min((container.clientWidth - 40) / w, (container.clientHeight - 40) / h);
+        mapDiv.style.width = w + 'px';
+        mapDiv.style.height = h + 'px';
+        mapDiv.style.transform = `scale(${scale})`;
+        map.resize();
+    }
+    window.addEventListener('resize', updateViewport);
 
-    function setPos(type) {
+    function addPoint() {
+        const id = Date.now();
         const c = map.getCenter();
-        document.getElementById(`${type}-pos`).value = 
-            `${c.lat.toFixed(6)},${c.lng.toFixed(6)},${map.getZoom().toFixed(2)},${map.getPitch().toFixed(0)},${map.getBearing().toFixed(0)}`;
+        const pt = { id, lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() };
+        points.push(pt);
+        renderPoints();
     }
 
-    async function exportSingleFrame(type) {
-        const d = document.getElementById(`${type}-pos`).value.split(',').map(Number);
-        map.jumpTo({ center: [d[1], d[0]], zoom: d[2], pitch: d[3], bearing: d[4] });
-        await new Promise(r => map.once('idle', r));
-        const link = document.createElement('a');
-        link.download = `frame_${type}.png`;
-        link.href = map.getCanvas().toDataURL('image/png');
-        link.click();
+    function removePoint(id) {
+        if(points.length <= 2) return alert("Min 2 points required");
+        points = points.filter(p => p.id !== id);
+        renderPoints();
+    }
+
+    function capturePoint(id) {
+        const idx = points.findIndex(p => p.id === id);
+        const c = map.getCenter();
+        points[idx] = { id, lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() };
+        renderPoints();
+    }
+
+    function renderPoints() {
+        const list = document.getElementById('points-list');
+        list.innerHTML = '';
+        points.forEach((p, i) => {
+            const card = document.createElement('div');
+            card.className = 'point-card';
+            card.innerHTML = `
+                <label>Waypoint ${i + 1}</label>
+                <div style="font-size:9px; color:#aaa; margin-bottom:5px;">
+                    ${p.lat.toFixed(4)}, ${p.lng.toFixed(4)} | Z: ${p.zoom.toFixed(1)}
+                </div>
+                <button class="btn-capture" onclick="capturePoint(${p.id})">Update to Current View</button>
+                ${i > 1 ? `<button class="btn-remove" onclick="removePoint(${p.id})">×</button>` : ''}
+            `;
+            list.appendChild(card);
+        });
     }
 
     async function generateZip() {
-        const start = document.getElementById('start-pos').value.split(',').map(Number);
-        const end = document.getElementById('end-pos').value.split(',').map(Number);
-        const duration = parseFloat(document.getElementById('duration').value);
+        const durationPerLeg = parseFloat(document.getElementById('duration').value);
         const fps = parseInt(document.getElementById('fps').value);
-        const totalFrames = Math.ceil(duration * fps);
-        const easing = easingFunctions[document.getElementById('easing-type').value];
-        
+        const totalFramesPerLeg = Math.ceil(durationPerLeg * fps);
         const zip = new JSZip();
         const btn = document.getElementById('startBtn');
         btn.disabled = true;
 
-        for (let i = 0; i <= totalFrames; i++) {
-            const t = easing(i / totalFrames);
+        let frameCount = 0;
 
-            // Interpolate ALL values simultaneously for a "direct flight"
-            const lat = start[0] + (end[0] - start[0]) * t;
-            const lng = start[1] + (end[1] - start[1]) * t;
-            const zoom = start[2] + (end[2] - start[2]) * t;
-            const pitch = start[3] + (end[3] - start[3]) * t;
-            const bearing = start[4] + (end[4] - start[4]) * t;
+        // Iterate through each segment (Leg)
+        for (let p = 0; p < points.length - 1; p++) {
+            const start = points[p];
+            const end = points[p+1];
 
-            map.jumpTo({ center: [lng, lat], zoom: zoom, pitch: pitch, bearing: bearing });
+            for (let i = 0; i < totalFramesPerLeg; i++) {
+                const t = i / totalFramesPerLeg;
+                // Cubic easing for smooth transition between legs
+                const easedT = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
-            await new Promise(r => map.once('idle', r));
+                // FIX: Logarithmic Zoom + Simultaneous Lerp
+                const lat = start.lat + (end.lat - start.lat) * easedT;
+                const lng = start.lng + (end.lng - start.lng) * easedT;
+                const zoom = start.zoom + (end.zoom - start.zoom) * easedT;
+                const pitch = start.pitch + (end.pitch - start.pitch) * easedT;
+                const bearing = start.bearing + (end.bearing - start.bearing) * easedT;
 
-            const imgData = map.getCanvas().toDataURL('image/png').split(',')[1];
-            zip.file(`frame_${String(i).padStart(4, '0')}.png`, imgData, {base64: true});
+                map.jumpTo({ center: [lng, lat], zoom: zoom, pitch: pitch, bearing: bearing });
+                await new Promise(r => map.once('idle', r));
 
-            const percent = Math.round((i / totalFrames) * 100);
-            document.getElementById('progress').style.width = percent + "%";
-            document.getElementById('status-text').innerText = `Rendering frame ${i}/${totalFrames}`;
+                const imgData = map.getCanvas().toDataURL('image/png').split(',')[1];
+                zip.file(`frame_${String(frameCount).padStart(5, '0')}.png`, imgData, {base64: true});
+                
+                frameCount++;
+                const totalTarget = totalFramesPerLeg * (points.length - 1);
+                const percent = Math.round((frameCount / totalTarget) * 100);
+                document.getElementById('progress').style.width = percent + "%";
+                document.getElementById('status-text').innerText = `Rendering: ${percent}%`;
+            }
         }
 
-        document.getElementById('status-text').innerText = "Generating ZIP...";
+        document.getElementById('status-text').innerText = "Compressing ZIP...";
         const content = await zip.generateAsync({type:"blob"});
         const link = document.createElement('a');
         link.href = URL.createObjectURL(content);
-        link.download = "map_sequence.zip";
+        link.download = `map_animation_${document.getElementById('res-preset').value}.zip`;
         link.click();
-
         btn.disabled = false;
         document.getElementById('status-text').innerText = "Done!";
     }
