@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Map Animator</title>
+    <title>Map Animator PRO - Multi-Style</title>
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -24,10 +24,8 @@
         button { background: #3b82f6; border: none; font-weight: 600; cursor: pointer; transition: 0.2s; }
         .btn-remove { background: #991b1b; width: 22px; height: 22px; position: absolute; right: 8px; top: 8px; border-radius: 50%; padding: 0; line-height: 20px; z-index: 10; }
 
-        /* FIX SCALE: Wrapper para isolar o scale do posicionamento do MapLibre */
         .pin-wrapper { will-change: transform; pointer-events: none; }
         .pin-inner { pointer-events: auto; transform-origin: center bottom; }
-
         .pin-style-modern { color: white; padding: 6px 14px; border-radius: 50px; font-size: 13px; font-weight: 700; white-space: nowrap; border: 2px solid #ffffff; background-clip: padding-box; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.4)); }
         .pin-style-dot { width: 14px; height: 14px; border: 2.5px solid #ffffff; border-radius: 50%; filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.4)); transform-origin: center center !important; }
         .pin-label-dot { position: absolute; left: 22px; background: rgba(0,0,0,0.85); padding: 4px 8px; border-radius: 4px; color: white; white-space: nowrap; border: 1px solid #444; }
@@ -38,12 +36,21 @@
 <body>
 
 <div class="sidebar" id="sidebar">
-    <h2 style="margin:0 0 10px 0;">Map Animator</h2>
+    <h2 style="margin:0 0 10px 0;">Map Animator PRO</h2>
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 15px;">
         <button onclick="saveProject()">Save JSON</button>
         <button onclick="document.getElementById('loadInput').click()">Load JSON</button>
         <input type="file" id="loadInput" style="display:none" onchange="loadProject(this)" accept=".json">
     </div>
+
+    <div class="section-title">Visual Style</div>
+    <label>Map Theme</label>
+    <select id="map-style" onchange="changeMapStyle(this.value)">
+        <option value="https://tiles.openfreemap.org/styles/bright">Bright (Default)</option>
+        <option value="https://tiles.openfreemap.org/styles/liberty">Liberty (Detailed)</option>
+        <option value="https://tiles.openfreemap.org/styles/positron">Positron (Light/Grey)</option>
+        <option value="https://tiles.openfreemap.org/styles/dark">Dark Matter (Clean Dark)</option>
+    </select>
 
     <label>Output Resolution</label>
     <select id="res-preset" onchange="updateViewport()">
@@ -105,12 +112,25 @@
         preserveDrawingBuffer: true, antialias: true, attributionControl: false
     });
 
-    map.on('load', () => {
+    // Função central para configurar as camadas do mapa (Source e Route)
+    function setupMapLayers() {
+        if (!map.getSource('route-source')) {
+            map.addSource('route-source', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } } });
+            map.addLayer({ id: 'route-line', type: 'line', source: 'route-source', paint: { 'line-color': document.getElementById('path-color').value, 'line-width': 5, 'line-dasharray': [2, 2] } });
+        }
+        // Remove Labels de lugares padrão para o mapa ficar limpo
         map.getStyle().layers.forEach(l => { if (l.id.includes('poi') || l.id.includes('place')) map.removeLayer(l.id); });
-        map.addSource('route-source', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } } });
-        map.addLayer({ id: 'route-line', type: 'line', source: 'route-source', paint: { 'line-color': '#F72210', 'line-width': 5, 'line-dasharray': [2, 2] } });
-        updateViewport();
-    });
+        syncPathLayer();
+    }
+
+    map.on('load', setupMapLayers);
+
+    // Troca de estilo dinâmica
+    function changeMapStyle(url) {
+        map.setStyle(url);
+        // O evento 'styledata' avisa quando o novo estilo carregou para reinserir as camadas
+        map.once('styledata', setupMapLayers);
+    }
 
     function updateViewport() {
         const [w, h] = document.getElementById('res-preset').value.split('x').map(Number);
@@ -123,13 +143,9 @@
     }
     window.addEventListener('resize', updateViewport);
 
-    function toggleDrawing() { isDrawing = !isDrawing; document.getElementById('drawBtn').style.background = isDrawing ? '#10b981' : '#4b5563'; }
-    map.on('click', (e) => { if (!isDrawing) return; customPathCoords.push([e.lngLat.lng, e.lngLat.lat]); syncPathLayer(); });
-    function syncPathLayer(pCoords = null) { const c = pCoords || customPathCoords; map.setPaintProperty('route-line', 'line-color', document.getElementById('path-color').value); map.getSource('route-source').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: c.length > 1 ? c : [] } }); }
-    function clearPath() { customPathCoords = []; syncPathLayer(); }
-
     function addPin() {
-        const pin = { id: Date.now(), ...map.getCenter(), text: "Novo Local", style: "pin-style-modern", color: "#F72210", scale: 1.0 };
+        const id = Date.now();
+        const pin = { id, ...map.getCenter(), text: "Novo Local", style: "pin-style-modern", color: "#F72210", scale: 1.0, marker: null };
         pins.push(pin);
         createPinMarker(pin);
         renderUI();
@@ -137,34 +153,22 @@
 
     function createPinMarker(pin) {
         if (pin.marker) pin.marker.remove();
-        
-        // Wrapper para o MapLibre gerenciar posição
         const wrapper = document.createElement('div');
         wrapper.className = 'pin-wrapper';
-        
-        // Elemento interno para gerenciar a escala
         const inner = document.createElement('div');
         inner.className = `pin-inner ${pin.style}`;
         inner.style.backgroundColor = (pin.style === 'pin-style-clean') ? 'transparent' : pin.color;
         inner.style.transform = `scale(${pin.scale})`;
         inner.innerHTML = pin.style === 'pin-style-dot' ? `<div class="pin-label-dot">${pin.text}</div>` : pin.text;
-        
         wrapper.appendChild(inner);
-        
         const anchor = (pin.style === 'pin-style-modern' || pin.style === 'pin-style-dark') ? 'bottom' : 'center';
-        pin.marker = new maplibregl.Marker({ element: wrapper, draggable: true, anchor: anchor })
-            .setLngLat([pin.lng, pin.lat]).addTo(map);
-        
+        pin.marker = new maplibregl.Marker({ element: wrapper, draggable: true, anchor: anchor }).setLngLat([pin.lng, pin.lat]).addTo(map);
         pin.marker.on('dragend', () => { const l = pin.marker.getLngLat(); pin.lng = l.lng; pin.lat = l.lat; });
     }
 
     function removePin(id) {
         const idx = pins.findIndex(p => p.id === id);
-        if (idx !== -1) {
-            pins[idx].marker.remove();
-            pins.splice(idx, 1);
-            renderUI();
-        }
+        if (idx !== -1) { pins[idx].marker.remove(); pins.splice(idx, 1); renderUI(); }
     }
 
     function updatePin(id, field, value) {
@@ -172,14 +176,17 @@
         if (pin) { 
             pin[field] = value; 
             createPinMarker(pin); 
-            // Não chamamos renderUI aqui para o slider não perder o foco, 
-            // apenas atualizamos o texto da label se necessário
             if(field === 'scale') {
                 const label = document.getElementById(`label-scale-${id}`);
                 if(label) label.innerText = `Tamanho (Scale: ${value})`;
             }
         }
     }
+
+    function toggleDrawing() { isDrawing = !isDrawing; document.getElementById('drawBtn').style.background = isDrawing ? '#10b981' : '#4b5563'; }
+    map.on('click', (e) => { if (isDrawing) { customPathCoords.push([e.lngLat.lng, e.lngLat.lat]); syncPathLayer(); } });
+    function syncPathLayer(partial = null) { const c = partial || customPathCoords; if(map.getSource('route-source')) { map.setPaintProperty('route-line', 'line-color', document.getElementById('path-color').value); map.getSource('route-source').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: c.length > 1 ? c : [] } }); } }
+    function clearPath() { customPathCoords = []; syncPathLayer(); }
 
     async function captureFrame() {
         const cont = document.getElementById('map-container');
@@ -195,6 +202,34 @@
         cont.style.transform = originalTransform;
         sidebar.style.visibility = 'visible'; 
         return canvas;
+    }
+
+    async function generateZip() {
+        if (waypoints.length < 2) return alert("Min 2 Waypoints");
+        const btn = document.getElementById('startBtn'); btn.disabled = true;
+        const zip = new JSZip();
+        const fps = parseInt(document.getElementById('fps').value);
+        const durPerLeg = parseFloat(document.getElementById('duration').value);
+        const framesPerLeg = Math.ceil(durPerLeg * fps);
+        const totalFrames = framesPerLeg * (waypoints.length - 1);
+        let totalIdx = 0;
+
+        for (let p = 0; p < waypoints.length - 1; p++) {
+            const A = waypoints[p], B = waypoints[p+1];
+            for (let i = 0; i < framesPerLeg; i++) {
+                const t = i / framesPerLeg;
+                const gProgress = Math.min(1, (totalIdx / totalFrames) / 0.9);
+                map.jumpTo({ center: [A.lng + (B.lng-A.lng)*t, A.lat + (B.lat-A.lat)*t], zoom: A.zoom + (B.zoom-A.zoom)*t, pitch: A.pitch + (B.pitch-A.pitch)*t, bearing: A.bearing + (B.bearing-A.bearing)*t });
+                if (customPathCoords.length > 1) syncPathLayer(getTrimmedPath(customPathCoords, gProgress));
+                const canvas = await captureFrame();
+                zip.file(`frame_${totalIdx.toString().padStart(5, '0')}.png`, canvas.toDataURL('image/png').split(',')[1], {base64: true});
+                totalIdx++;
+                document.getElementById('status-text').innerText = `Rendering: ${Math.round((totalIdx/totalFrames)*100)}%`;
+            }
+        }
+        const blob = await zip.generateAsync({type:"blob"});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "render.zip"; a.click();
+        btn.disabled = false; syncPathLayer();
     }
 
     function getTrimmedPath(coords, progress) {
@@ -217,43 +252,12 @@
         return newCoords;
     }
 
-    async function generateZip() {
-        if (waypoints.length < 2) return alert("Min 2 Waypoints");
-        const btn = document.getElementById('startBtn'); btn.disabled = true;
-        const zip = new JSZip();
-        const fps = parseInt(document.getElementById('fps').value);
-        const durPerLeg = parseFloat(document.getElementById('duration').value);
-        const framesPerLeg = Math.ceil(durPerLeg * fps);
-        const totalFrames = framesPerLeg * (waypoints.length - 1);
-        const easingFunc = easings[document.getElementById('easing-type').value];
-        let totalIdx = 0;
-
-        for (let p = 0; p < waypoints.length - 1; p++) {
-            const A = waypoints[p], B = waypoints[p+1];
-            for (let i = 0; i < framesPerLeg; i++) {
-                const legT = i / framesPerLeg;
-                const easedLegT = easingFunc(legT);
-                const gProgress = Math.min(1, (totalIdx / totalFrames) / 0.9);
-                map.jumpTo({ center: [A.lng + (B.lng-A.lng)*easedLegT, A.lat + (B.lat-A.lat)*easedLegT], zoom: A.zoom + (B.zoom-A.zoom)*easedLegT, pitch: A.pitch + (B.pitch-A.pitch)*easedLegT, bearing: A.bearing + (B.bearing-A.bearing)*easedLegT });
-                if (customPathCoords.length > 1) syncPathLayer(getTrimmedPath(customPathCoords, gProgress));
-                const canvas = await captureFrame();
-                zip.file(`frame_${totalIdx.toString().padStart(5, '0')}.png`, canvas.toDataURL('image/png').split(',')[1], {base64: true});
-                totalIdx++;
-                document.getElementById('status-text').innerText = `Rendering: ${Math.round((totalIdx/totalFrames)*100)}%`;
-            }
-        }
-        const blob = await zip.generateAsync({type:"blob"});
-        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "render.zip"; a.click();
-        btn.disabled = false; syncPathLayer();
-    }
-
     function addWaypoint() { const c = map.getCenter(); waypoints.push({ id: Date.now(), lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }); renderUI(); }
     function updateWaypoint(id) { const idx = waypoints.findIndex(w => w.id === id); const c = map.getCenter(); waypoints[idx] = { ...waypoints[idx], lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }; }
     async function exportSingle(idx) { const w = waypoints[idx]; map.jumpTo({ center: [w.lng, w.lat], zoom: w.zoom, pitch: w.pitch, bearing: w.bearing }); await new Promise(r => setTimeout(r, 500)); const c = await captureFrame(); const a = document.createElement('a'); a.href = c.toDataURL('image/png'); a.download=`waypoint_${idx}.png`; a.click(); }
     
     function renderUI() {
         document.getElementById('points-list').innerHTML = waypoints.map((w,i) => `<div class="card"><label>Waypoint ${i+1}</label><div class="flex-row"><button onclick="updateWaypoint(${w.id})">Update</button><button onclick="exportSingle(${i})">PNG</button><button class="btn-remove" onclick="waypoints = waypoints.filter(wp => wp.id !== ${w.id}); renderUI()">×</button></div></div>`).join('');
-        
         document.getElementById('pins-list').innerHTML = pins.map((p) => `
             <div class="card">
                 <button class="btn-remove" onclick="removePin(${p.id})">×</button>
@@ -272,8 +276,8 @@
             </div>`).join('');
     }
     
-    function saveProject() { const data = { waypoints, pins: pins.map(p => ({...p, marker:null})), path: customPathCoords }; const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], {type:"application/json"})); a.download="project.json"; a.click(); }
-    function loadProject(input) { const r = new FileReader(); r.onload = (e) => { const d = JSON.parse(e.target.result); waypoints = d.waypoints; pins.forEach(p=>p.marker?.remove()); pins=[]; d.pins.forEach(p => { pins.push(p); createPinMarker(p); }); if(d.path) customPathCoords = d.path; if(waypoints.length > 0) map.jumpTo({ center: [waypoints[0].lng, waypoints[0].lat], zoom: waypoints[0].zoom, pitch: waypoints[0].pitch, bearing: waypoints[0].bearing }); syncPathLayer(); renderUI(); updateViewport(); }; r.readAsText(input.files[0]); }
+    function saveProject() { const data = { waypoints, pins: pins.map(p => ({...p, marker:null})), path: customPathCoords, mapStyle: document.getElementById('map-style').value }; const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], {type:"application/json"})); a.download="project.json"; a.click(); }
+    function loadProject(input) { const r = new FileReader(); r.onload = (e) => { const d = JSON.parse(e.target.result); waypoints = d.waypoints; pins.forEach(p=>p.marker?.remove()); pins=[]; (d.pins||[]).forEach(p => { pins.push(p); createPinMarker(p); }); customPathCoords = d.path || []; if(d.mapStyle) { document.getElementById('map-style').value = d.mapStyle; changeMapStyle(d.mapStyle); } if(waypoints.length > 0) map.jumpTo({ center: [waypoints[0].lng, waypoints[0].lat], zoom: waypoints[0].zoom, pitch: waypoints[0].pitch, bearing: waypoints[0].bearing }); syncPathLayer(); renderUI(); updateViewport(); }; r.readAsText(input.files[0]); }
 </script>
 </body>
 </html>
