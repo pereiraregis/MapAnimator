@@ -1,0 +1,46 @@
+body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; background: #0f0f0f; color: #ececec; overflow: hidden; }
+.app-container { display: flex; height: 100vh; width: 100vw; }
+
+.sidebar { width: 380px; height: 100%; padding: 20px; box-sizing: border-box; border-right: 1px solid #333; background: rgba(26, 26, 26, 0.98); overflow-y: auto; display: flex; flex-direction: column; z-index: 10; box-shadow: 10px 0 30px rgba(0,0,0,0.5); position: relative; }
+.map-viewport { flex-grow: 1; position: relative; display: flex; align-items: center; justify-content: center; background: #000; overflow: hidden; }
+.map-container { position: relative; transform-origin: center center; background: #000; flex-shrink: 0; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+.map-element { width: 100%; height: 100%; }
+.maplibregl-ctrl-attrib, .maplibregl-ctrl-logo { display: none !important; }
+
+.section-title { font-size: 11px; font-weight: 800; color: #3b82f6; text-transform: uppercase; margin: 20px 0 10px 0; border-bottom: 1px solid #333; padding-bottom: 5px; }
+.card { background: #252525; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #3b82f6; position: relative; }
+label { display: block; font-size: 9px; color: #888; margin-bottom: 2px; text-transform: uppercase; font-weight: 700; }
+input, select, button { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #111; color: white; margin-bottom: 5px; font-size: 12px; box-sizing: border-box; }
+input[type="range"] { padding: 0; height: 4px; background: #444; cursor: pointer; }
+.flex-row { display: flex; gap: 5px; align-items: flex-end; }
+button { background: #3b82f6; border: none; font-weight: 600; cursor: pointer; transition: 0.2s; }
+button:hover { opacity: 0.9; }
+.btn-remove { background: #991b1b; width: 22px; height: 22px; position: absolute; right: 8px; top: 8px; border-radius: 50%; padding: 0; line-height: 20px; z-index: 10; display: flex; align-items: center; justify-content: center; }
+.waypoint-controls { display: grid; grid-template-columns: 1fr 1fr 22px; gap: 5px; margin-top: 5px; }
+.status-text { color: #10b981; font-size: 11px; margin-top: 10px; }
+
+/* Custom Cursor for Draw Mode */
+.cursor-draw .maplibregl-canvas-container { cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2l4 4-10 10H7v-5L18 2z"/><path d="M3 22h18"/></svg>') 0 24, crosshair !important; }
+
+/* Pin Styles */
+.pin-container { position: relative; display: flex; align-items: center; justify-content: center; will-change: transform; transform-style: preserve-3d; backface-visibility: hidden; }
+.pin-scaler { display: flex; align-items: center; justify-content: center; position: relative; transform-origin: center bottom; transition: transform 0.05s linear; }
+.pin-svg { display: block; width: 100%; height: 100%; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.5)); pointer-events: none; }
+.pin-label { position: absolute; color: white; font-weight: 800; white-space: nowrap; text-shadow: 0px 1px 2px rgba(0,0,0,0.8); pointer-events: none; z-index: 2; top: 50%; left: 50%; line-height: 1; }
+
+/* Collapsible Section Styles */
+.collapsible-header {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.collapsible-header span {
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+.collapsible-content {
+  padding-left: 18px;
+  border-left: 1px solid #333;
+  margin-left: 5px;
+}

@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Map Animator PRO - AE Export Ready</title>
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="sidebar" id="sidebar">
+    <h2 style="margin:0 0 10px 0;">Map Animator PRO</h2>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 15px;">
+        <button onclick="saveProject()">Save JSON</button>
+        <button onclick="document.getElementById('loadInput').click()">Load JSON</button>
+        <input type="file" id="loadInput" style="display:none" onchange="loadProject(this)" accept=".json">
+    </div>
+
+    <div class="section-title">Canvas Settings</div>
+    <label>Output Resolution</label>
+    <select id="res-preset" onchange="updateViewport()">
+        <option value="1920x1080">Full HD (16:9)</option>
+        <option value="3840x2160">4K Ultra HD (16:9)</option>
+        <option value="1080x1920">Vertical (9:16)</option>
+        <option value="1080x1080">Square (1:1)</option>
+    </select>
+
+    <label>Map Theme</label>
+    <select id="map-style" onchange="changeMapStyle(this.value)">
+        <option value="https://tiles.openfreemap.org/styles/bright">Bright</option>
+        <option value="https://tiles.openfreemap.org/styles/liberty">Liberty</option>
+        <option value="https://tiles.openfreemap.org/styles/positron">Positron</option>
+        <option value="https://tiles.openfreemap.org/styles/dark">Dark Matter</option>
+    </select>
+
+    <div class="section-title">Draw Path</div>
+    <div class="flex-row">
+        <button id="drawBtn" onclick="toggleDrawing()" style="background:#4b5563">Draw Mode</button>
+        <button onclick="clearPath()" style="background:#991b1b">Clear</button>
+    </div>
+    <label>Line Color</label>
+    <input type="color" id="path-color" value="#F72210" onchange="syncPathLayer()">
+
+    <div class="section-title">Camera Path</div>
+    <div id="points-list"></div>
+    <button onclick="addWaypoint()">+ Add Waypoint</button>
+
+    <div class="section-title">Draggable Pins</div>
+    <div id="pins-list"></div>
+    <button style="background:#F72210" onclick="addPin()">+ Add Pin</button>
+
+    <div class="section-title">Settings</div>
+    <div class="flex-row">
+        <div style="flex:1"><label>Secs/Leg</label><input type="number" id="duration" value="3"></div>
+        <div style="flex:1"><label>FPS</label><input type="number" id="fps" value="30"></div>
+    </div>
+    <label>Easing</label>
+    <select id="easing-type">
+        <option value="easeInOutCubic">Ease In Out</option>
+        <option value="linear">Linear</option>
+    </select>
+
+    <button id="startBtn" style="background:#10b981; margin-top:15px; padding:12px;" onclick="generateZip()">RENDER SEQUENCE (ZIP)</button>
+    <button id="aeBtn" style="background:#8b5cf6; margin-top:5px; padding:12px; display:none;" onclick="downloadAEScript()">DOWNLOAD AE SCRIPT</button>
+    <div id="status-text">Ready.</div>
+</div>
+
+<div id="map-viewport">
+    <div id="map-container"><div id="map"></div></div>
+</div>
+
+<script>
+    let waypoints = [];
+    let pins = [];
+    let customPathCoords = [];
+    let isDrawing = false;
+    let aeData = [];
+
+    const easings = { easeInOutCubic: t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2, linear: t => t };
+
+    const map = new maplibregl.Map({
+        container: 'map',
+        style: 'https://tiles.openfreemap.org/styles/bright',
+        center: [-46.633, -23.550], zoom: 12,
+        preserveDrawingBuffer: true, antialias: true, attributionControl: false
+    });
+
+    const svgs = {
+        'classic': `<svg viewBox="0 0 24 24" fill="%C" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" stroke="white" stroke-width="1"/></svg>`,
+        'bubble': `<svg viewBox="0 0 100 50" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="96" height="46" rx="15" fill="%C" stroke="white" stroke-width="3"/><path d="M50 48 L40 60 L60 60 Z" fill="%C" stroke="white" stroke-width="0"/></svg>`,
+        'square': `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="20" height="20" rx="4" fill="%C" stroke="white" stroke-width="2"/><path d="M12 22l-4 4h8l-4-4z" fill="%C"/></svg>`,
+        'flag': `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M5 2v20" stroke="#000" stroke-width="2"/><path d="M5 4h14l-4 5 4 5H5" fill="%C" stroke="none"/></svg>`,
+        'dot': `<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="8" fill="%C" stroke="white" stroke-width="2"/></svg>`
+    };
+
+    function setupLayers() {
+        const style = map.getStyle();
+        if(style && style.layers) {
+            style.layers.forEach(l => { if (l.type === 'symbol' && !l.id.includes('pins')) map.setLayoutProperty(l.id, 'visibility', 'none'); });
+        }
+        if (!map.getSource('route-source')) {
+            map.addSource('route-source', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } } });
+            map.addLayer({ id: 'route-line', type: 'line', source: 'route-source', paint: { 'line-color': document.getElementById('path-color').value, 'line-width': 5, 'line-dasharray': [2, 2] } });
+        }
+        syncPathLayer();
+    }
+    map.on('load', () => { setupLayers(); updateViewport(); });
+    function changeMapStyle(url) { map.setStyle(url); map.once('styledata', setupLayers); }
+
+    function updateViewport() {
+        const [w, h] = document.getElementById('res-preset').value.split('x').map(Number);
+        const cont = document.getElementById('map-container');
+        const vp = document.getElementById('map-viewport');
+        cont.style.width = w + 'px'; cont.style.height = h + 'px';
+        const scale = Math.min((vp.clientWidth - 40) / w, (vp.clientHeight - 40) / h);
+        cont.style.transform = `scale(${scale})`;
+        map.resize();
+    }
+    window.addEventListener('resize', updateViewport);
+
+    function addPin() {
+        const id = Date.now();
+        const pin = { id, ...map.getCenter(), text: "Label", color: "#F72210", scale: 1.0, textScale: 1.0, style: 'bubble', textOffsetX: 0, textOffsetY: 0, marker: null };
+        pins.push(pin);
+        createPinMarker(pin);
+        renderUI();
+    }
+    function createPinMarker(pin) {
+        if (pin.marker) pin.marker.remove();
+        const container = document.createElement('div'); container.className = 'pin-container'; container.style.cursor = "move";
+        const scaler = document.createElement('div'); scaler.className = 'pin-scaler'; scaler.style.transform = `scale(${pin.scale})`; 
+        scaler.style.width = (pin.style === 'bubble') ? '100px' : '50px'; scaler.style.height = (pin.style === 'bubble') ? '50px' : '50px';
+        const img = document.createElement('img'); img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent((svgs[pin.style] || svgs.classic).replace(/%C/g, pin.color)); img.className = 'pin-svg';
+        const label = document.createElement('div'); label.className = 'pin-label'; label.innerText = pin.text;
+        label.style.fontSize = `${12 * (pin.textScale || 1.0)}px`; label.style.transform = `translate(-50%, -50%) translate(${pin.textOffsetX}px, ${pin.textOffsetY}px)`;
+        scaler.appendChild(img); scaler.appendChild(label); container.appendChild(scaler);
+        pin.marker = new maplibregl.Marker({ element: container, draggable: true, anchor: (pin.style === 'dot') ? 'center' : 'bottom' }).setLngLat([pin.lng, pin.lat]).addTo(map);
+        pin.marker.on('dragend', () => { const l = pin.marker.getLngLat(); pin.lng = l.lng; pin.lat = l.lat; });
+    }
+    function updatePin(id, field, value) {
+        const pin = pins.find(p => p.id === id);
+        if (pin) {
+            if (['scale', 'textScale', 'textOffsetX', 'textOffsetY'].includes(field)) value = parseFloat(value);
+            pin[field] = value; createPinMarker(pin);
+            if(field === 'scale') document.getElementById(`lbl-scale-${id}`).innerText = value;
+            if(field === 'textScale') document.getElementById(`lbl-tscale-${id}`).innerText = value;
+        }
+    }
+    function removePin(id) { const idx = pins.findIndex(p => p.id === id); if (idx !== -1) { pins[idx].marker.remove(); pins.splice(idx, 1); renderUI(); } }
+
+    function renderUI() {
+        document.getElementById('points-list').innerHTML = waypoints.map((w,i) => `<div class="card"><label>Waypoint ${i+1}</label><div class="waypoint-controls"><button onclick="updateW(${w.id})">Update</button><button onclick="exportPNG(${w.id})">PNG</button><button class="btn-remove" onclick="waypoints=waypoints.filter(x=>x.id!=${w.id});renderUI()">×</button></div></div>`).join('');
+        document.getElementById('pins-list').innerHTML = pins.map(p => `
+            <div class="card"><button class="btn-remove" onclick="removePin(${p.id})">×</button><input type="text" value="${p.text}" oninput="updatePin(${p.id}, 'text', this.value)">
+            <label>Scale: <span id="lbl-scale-${p.id}">${p.scale}</span></label><input type="range" min="0.5" max="3.0" step="0.1" value="${p.scale}" oninput="updatePin(${p.id}, 'scale', this.value)">
+            <label>Text Size: <span id="lbl-tscale-${p.id}">${p.textScale || 1.0}</span></label><input type="range" min="0.5" max="3.0" step="0.1" value="${p.textScale || 1.0}" oninput="updatePin(${p.id}, 'textScale', this.value)">
+            <div class="flex-row"><div style="flex:1"><label>Text X</label><input type="number" value="${p.textOffsetX}" oninput="updatePin(${p.id}, 'textOffsetX', this.value)"></div><div style="flex:1"><label>Text Y</label><input type="number" value="${p.textOffsetY}" oninput="updatePin(${p.id}, 'textOffsetY', this.value)"></div></div>
+            <div class="flex-row" style="margin-top:5px;"><select onchange="updatePin(${p.id}, 'style', this.value)" style="flex:2"><option value="classic" ${p.style==='classic'?'selected':''}>Classic</option><option value="bubble" ${p.style==='bubble'?'selected':''}>Bubble</option><option value="square" ${p.style==='square'?'selected':''}>Square</option><option value="flag" ${p.style==='flag'?'selected':''}>Flag</option><option value="dot" ${p.style==='dot'?'selected':''}>Dot</option></select><input type="color" value="${p.color}" oninput="updatePin(${p.id}, 'color', this.value)" style="flex:1; height:32px; padding:2px"></div></div>`).join('');
+    }
+
+    function toggleDrawing() { isDrawing = !isDrawing; document.getElementById('drawBtn').style.background = isDrawing ? '#10b981' : '#4b5563'; }
+    map.on('click', (e) => { if (isDrawing) { customPathCoords.push([e.lngLat.lng, e.lngLat.lat]); syncPathLayer(); } });
+    function syncPathLayer() { map.setPaintProperty('route-line', 'line-color', document.getElementById('path-color').value); map.getSource('route-source').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: customPathCoords } }); }
+    function clearPath() { customPathCoords = []; syncPathLayer(); }
+    function addWaypoint() { const c = map.getCenter(); waypoints.push({ id: Date.now(), lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }); renderUI(); }
+    function updateW(id) { const idx = waypoints.findIndex(x=>x.id==id); const c = map.getCenter(); waypoints[idx] = { ...waypoints[idx], lat: c.lat, lng: c.lng, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }; }
+    async function exportPNG(id) { const w = waypoints.find(x=>x.id==id); map.jumpTo({ center: [w.lng, w.lat], zoom: w.zoom, pitch: w.pitch, bearing: w.bearing }); await new Promise(r => map.once('idle', r)); const a = document.createElement('a'); a.href = map.getCanvas().toDataURL(); a.download=`w_${id}.png`; a.click(); }
+    function getTrimmedPath(coords, progress) { /* ... (Same logic as before) ... */ if (coords.length < 2 || progress >= 1) return coords; let totalDist=0, segmentDists=[]; for(let i=0;i<coords.length-1;i++){ let d=Math.sqrt(Math.pow(coords[i+1][0]-coords[i][0],2)+Math.pow(coords[i+1][1]-coords[i][1],2)); segmentDists.push(d); totalDist+=d; } let targetDist=totalDist*progress, currentDist=0, newCoords=[coords[0]]; for(let i=0;i<segmentDists.length;i++){ if(currentDist+segmentDists[i]<=targetDist){ newCoords.push(coords[i+1]); currentDist+=segmentDists[i]; }else{ let remain=(targetDist-currentDist)/segmentDists[i]; newCoords.push([coords[i][0]+(coords[i+1][0]-coords[i][0])*remain, coords[i][1]+(coords[i+1][1]-coords[i][1])*remain]); break; } } return newCoords; }
+
+    async function generateZip() {
+        if (waypoints.length < 2) return alert("Min 2 Waypoints");
+        document.getElementById('aeBtn').style.display = 'none';
+        const btn = document.getElementById('startBtn'); btn.disabled = true;
+        const zip = new JSZip();
+        aeData = []; // Reset AE Data
+
+        const fps = parseInt(document.getElementById('fps').value);
+        const dur = parseFloat(document.getElementById('duration').value);
+        const framesPerLeg = Math.ceil(dur * fps);
+        const totalFrames = framesPerLeg * (waypoints.length - 1);
+        const easingFunc = easings[document.getElementById('easing-type').value];
+        let totalIdx = 0;
+
+        for (let p = 0; p < waypoints.length - 1; p++) {
+            const A = waypoints[p], B = waypoints[p+1];
+            for (let i = 0; i < framesPerLeg; i++) {
+                const t = i / framesPerLeg;
+                const easedT = easingFunc(t);
+                const gProgress = Math.min(1, (totalIdx / totalFrames) / 0.9);
+
+                map.jumpTo({
+                    center: [A.lng + (B.lng-A.lng)*easedT, A.lat + (B.lat-A.lat)*easedT],
+                    zoom: A.zoom + (B.zoom-A.zoom)*easedT,
+                    pitch: A.pitch + (B.pitch-A.pitch)*easedT,
+                    bearing: A.bearing + (B.bearing-A.bearing)*easedT
+                });
+
+                if (customPathCoords.length > 1) syncPathLayer(getTrimmedPath(customPathCoords, gProgress));
+
+                await new Promise(r => map.once('idle', r));
+                
+                // COLETAR DADOS PARA AE
+                const c = map.getCenter();
+                // Calcula projeção em pixels para cada Waypoint (Tracking)
+                const wpProjections = waypoints.map(wp => {
+                    const px = map.project([wp.lng, wp.lat]);
+                    return { id: wp.id, x: px.x, y: px.y };
+                });
+
+                aeData.push({
+                    time: totalIdx / fps,
+                    zoom: map.getZoom(),
+                    bearing: map.getBearing(),
+                    pitch: map.getPitch(),
+                    center: [c.lng, c.lat],
+                    waypoints: wpProjections
+                });
+
+                // Render Frame
+                map.triggerRepaint();
+                await new Promise(r => setTimeout(r, 20)); 
+                const canvas = await html2canvas(document.getElementById('map-container'), { useCORS: true, scale: 1, allowTaint: true });
+                zip.file(`frame_${totalIdx.toString().padStart(5, '0')}.png`, canvas.toDataURL('image/png').split(',')[1], {base64: true});
+                
+                totalIdx++;
+                document.getElementById('status-text').innerText = `Rendering: ${Math.round((totalIdx/totalFrames)*100)}%`;
+            }
+        }
+        const blob = await zip.generateAsync({type:"blob"});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "anim.zip"; a.click();
+        btn.disabled = false; syncPathLayer();
+        document.getElementById('aeBtn').style.display = 'block';
+    }
+
+    function downloadAEScript() {
+        const [w, h] = document.getElementById('res-preset').value.split('x').map(Number);
+        const fps = parseInt(document.getElementById('fps').value);
+        const duration = aeData[aeData.length-1].time;
+        
+        let script = `
+        {
+            app.beginUndoGroup("Import Map Data");
+            var comp = app.project.items.addComp("Map Animation", ${w}, ${h}, 1, ${duration + 1}, ${fps});
+            
+            // 1. Camera Control Null
+            var camNull = comp.layers.addNull();
+            camNull.name = "Map Camera Control";
+            var sZoom = camNull.Effects.addProperty("ADBE Slider Control"); sZoom.name = "Map Zoom";
+            var sBear = camNull.Effects.addProperty("ADBE Slider Control"); sBear.name = "Map Bearing";
+            var sPitch = camNull.Effects.addProperty("ADBE Slider Control"); sPitch.name = "Map Pitch";
+            
+            // 2. Waypoint Trackers (Nulls que seguem os pontos na tela)
+            var wpNulls = {};
+            ${waypoints.map(wp => `
+                var wp${wp.id} = comp.layers.addNull();
+                wp${wp.id}.name = "Tracker WP ${waypoints.indexOf(wp)+1}";
+                wp${wp.id}.label = 10; // Purple
+                wpNulls[${wp.id}] = wp${wp.id};
+            `).join('')}
+
+            // 3. Keyframes
+            ${aeData.map(d => `
+                sZoom.property(1).setValueAtTime(${d.time}, ${d.zoom});
+                sBear.property(1).setValueAtTime(${d.time}, ${d.bearing});
+                sPitch.property(1).setValueAtTime(${d.time}, ${d.pitch});
+                
+                ${d.waypoints.map(wp => `
+                    if(wpNulls[${wp.id}]) wpNulls[${wp.id}].transform.position.setValueAtTime(${d.time}, [${wp.x}, ${wp.y}]);
+                `).join('')}
+            `).join('')}
+
+            app.endUndoGroup();
+            alert("Map Data Imported! Created Nulls for Camera and Waypoints.");
+        }`;
+
+        const blob = new Blob([script], {type: 'text/javascript'});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "import_map_ae.jsx"; a.click();
+    }
+
+    function saveProject() { const data = { waypoints, pins: pins.map(p => ({...p, marker:null})), path: customPathCoords, style: document.getElementById('map-style').value }; const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], {type:"application/json"})); a.download="project.json"; a.click(); }
+    function loadProject(input) { 
+        const r = new FileReader(); 
+        r.onload = (e) => { 
+            const d = JSON.parse(e.target.result); 
+            waypoints = d.waypoints || []; 
+            pins.forEach(p=>p.marker?.remove()); pins = []; 
+            (d.pins||[]).forEach(p => { 
+                p.scale = parseFloat(p.scale); p.textScale = parseFloat(p.textScale || 1.0);
+                p.textOffsetX = parseFloat(p.textOffsetX || 0); p.textOffsetY = parseFloat(p.textOffsetY || 0);
+                pins.push(p); createPinMarker(p); 
+            }); 
+            customPathCoords = d.path || []; 
+            if(d.style) { document.getElementById('map-style').value = d.style; changeMapStyle(d.style); }
+            if(waypoints.length > 0) map.jumpTo({ center: [waypoints[0].lng, waypoints[0].lat], zoom: waypoints[0].zoom, pitch: waypoints[0].pitch, bearing: waypoints[0].bearing }); 
+            renderUI(); syncPathLayer(); updateViewport();
+        }; 
+        r.readAsText(input.files[0]); 
+    }
+</script>
+</body>
+</html>

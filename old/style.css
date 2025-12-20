@@ -1,0 +1,22 @@
+body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; display: flex; background: #0f0f0f; color: #ececec; height: 100vh; width: 100vw; overflow: hidden; }
+.sidebar { position: absolute; left: 0; top: 0; width: 380px; height: 100%; padding: 20px; box-sizing: border-box; border-right: 1px solid #333; background: rgba(26, 26, 26, 0.98); overflow-y: auto; display: flex; flex-direction: column; z-index: 9999; box-shadow: 10px 0 30px rgba(0,0,0,0.5); }
+#map-viewport { flex-grow: 1; position: relative; display: flex; align-items: center; justify-content: center; background: #000; width: 100vw; height: 100vh; overflow: hidden; }
+#map-container { position: relative; transform-origin: center center; background: #000; flex-shrink: 0; width: 1920px; height: 1080px; }
+#map { width: 100%; height: 100%; }
+.maplibregl-ctrl-attrib, .maplibregl-ctrl-logo { display: none !important; }
+
+.section-title { font-size: 11px; font-weight: 800; color: #3b82f6; text-transform: uppercase; margin: 20px 0 10px 0; border-bottom: 1px solid #333; padding-bottom: 5px; }
+.card { background: #252525; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #3b82f6; position: relative; }
+label { display: block; font-size: 9px; color: #888; margin-bottom: 2px; text-transform: uppercase; font-weight: 700; }
+input, select, button { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #111; color: white; margin-bottom: 5px; font-size: 12px; }
+input[type="range"] { padding: 0; height: 4px; background: #444; cursor: pointer; }
+.flex-row { display: flex; gap: 5px; align-items: flex-end; }
+button { background: #3b82f6; border: none; font-weight: 600; cursor: pointer; transition: 0.2s; }
+.btn-remove { background: #991b1b; width: 22px; height: 22px; position: absolute; right: 8px; top: 8px; border-radius: 50%; padding: 0; line-height: 20px; z-index: 10; }
+.waypoint-controls { display: grid; grid-template-columns: 1fr 1fr 22px; gap: 5px; margin-top: 5px; }
+#status-text { color: #10b981; font-size: 11px; margin-top: 10px; }
+
+.pin-container { position: relative; display: flex; align-items: center; justify-content: center; will-change: transform; transform-style: preserve-3d; backface-visibility: hidden; }
+.pin-scaler { display: flex; align-items: center; justify-content: center; position: relative; transform-origin: center bottom; transition: transform 0.05s linear; }
+.pin-svg { display: block; width: 100%; height: 100%; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.5)); pointer-events: none; }
+.pin-label { position: absolute; color: white; font-weight: 800; white-space: nowrap; text-shadow: 0px 1px 2px rgba(0,0,0,0.8); pointer-events: none; z-index: 2; top: 50%; left: 50%; line-height: 1; }
