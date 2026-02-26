@@ -1,15 +1,15 @@
 {
   "files": {
-    "main.css": "/MapAnimator/static/css/main.494e82b5.css",
-    "main.js": "/MapAnimator/static/js/main.1a791760.js",
-    "static/js/453.faa28aed.chunk.js": "/MapAnimator/static/js/453.faa28aed.chunk.js",
-    "index.html": "/MapAnimator/index.html",
-    "main.494e82b5.css.map": "/MapAnimator/static/css/main.494e82b5.css.map",
-    "main.1a791760.js.map": "/MapAnimator/static/js/main.1a791760.js.map",
-    "453.faa28aed.chunk.js.map": "/MapAnimator/static/js/453.faa28aed.chunk.js.map"
+    "main.css": "./static/css/main.494e82b5.css",
+    "main.js": "./static/js/main.ba8c60b8.js",
+    "static/js/453.faa28aed.chunk.js": "./static/js/453.faa28aed.chunk.js",
+    "index.html": "./index.html",
+    "main.494e82b5.css.map": "./static/css/main.494e82b5.css.map",
+    "main.ba8c60b8.js.map": "./static/js/main.ba8c60b8.js.map",
+    "453.faa28aed.chunk.js.map": "./static/js/453.faa28aed.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.494e82b5.css",
-    "static/js/main.1a791760.js"
+    "static/js/main.ba8c60b8.js"
   ]
 }
