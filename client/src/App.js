@@ -1,796 +1,745 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import MaplibreGeocoder from '@maplibre/maplibre-gl-geocoder';
+import '@maplibre/maplibre-gl-geocoder/dist/maplibre-gl-geocoder.css';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { toBlobURL } from '@ffmpeg/util';
+import { getProject, types } from '@theatre/core';
+import studio from '@theatre/studio';
 import JSZip from 'jszip';
-import html2canvas from 'html2canvas';
 import './App.css';
+
+studio.initialize();
+const project = getProject('MapAnimator v2');
+const sheet = project.sheet('Main Scene');
+
+let studioHidden = false;
+const toggleStudio = () => {
+  if (studioHidden) { studio.ui.restore(); studioHidden = false; }
+  else { studio.ui.hide(); studioHidden = true; }
+};
 
 const SVGS = {
   'classic': `<svg viewBox="0 0 24 24" fill="%C" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" stroke="white" stroke-width="1"/></svg>`,
-  'bubble': `<svg viewBox="0 0 100 50" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="96" height="46" rx="15" fill="%C" stroke="white" stroke-width="3"/><path d="M50 48 L40 60 L60 60 Z" fill="%C" stroke="white" stroke-width="0"/></svg>`,
+  'bubble': `<svg viewBox="0 0 100 50" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="96" height="46" rx="15" fill="%C" stroke="white" stroke-width="3"/><path d="M50 48 L40 60 L60 60 Z" fill="%C"/></svg>`,
   'square': `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="20" height="20" rx="4" fill="%C" stroke="white" stroke-width="2"/><path d="M12 22l-4 4h8l-4-4z" fill="%C"/></svg>`,
-  'flag': `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M5 2v20" stroke="#000" stroke-width="2"/><path d="M5 4h14l-4 5 4 5H5" fill="%C" stroke="none"/></svg>`,
+  'flag': `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M5 2v20" stroke="white" stroke-width="2"/><path d="M5 4h14l-4 5 4 5H5" fill="%C"/></svg>`,
   'dot': `<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="8" fill="%C" stroke="white" stroke-width="2"/></svg>`
 };
 
-const EASINGS = {
-  linear: t => t,
-  easeInQuad: t => t*t,
-  easeOutQuad: t => t*(2-t),
-  easeInOutQuad: t => t<.5 ? 2*t*t : -1+(4-2*t)*t,
-  easeInCubic: t => t*t*t,
-  easeOutCubic: t => (--t)*t*t+1,
-  easeInOutCubic: t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
-  easeInQuart: t => t*t*t*t,
-  easeOutQuart: t => 1-(--t)*t*t*t,
-  easeInOutQuart: t => t<.5 ? 8*t*t*t*t : 1-8*(--t)*t*t*t,
-  easeInSine: t => 1 - Math.cos(t * Math.PI / 2),
-  easeOutSine: t => Math.sin(t * Math.PI / 2),
-  easeInOutSine: t => -(Math.cos(Math.PI * t) - 1) / 2,
+const distance = (p1, p2) => Math.sqrt((p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2);
+const getInterpolatedPath = (coords, progress) => {
+  if (coords.length < 2 || progress <= 0) return [];
+  if (progress >= 0.99) return coords;
+  const total = coords.reduce((acc, p, i) => i === 0 ? 0 : acc + distance(coords[i - 1], p), 0);
+  const target = total * progress;
+  let acc = 0; const path = [];
+  for (let i = 0; i < coords.length - 1; i++) {
+    const p1 = coords[i], p2 = coords[i + 1], seg = distance(p1, p2);
+    path.push(p1);
+    if (acc + seg >= target) {
+      const r = (target - acc) / seg;
+      path.push([p1[0] + (p2[0] - p1[0]) * r, p1[1] + (p2[1] - p1[1]) * r]);
+      return path;
+    }
+    acc += seg;
+  }
+  return path;
 };
 
-const CollapsibleSection = ({ title, id, isCollapsed, onToggle, children }) => {
+/**
+ * Capture the map's WebGL canvas using the 'render' event.
+ * This is the most reliable method because it fires exactly after
+ * the GPU writes a new frame, while preserveDrawingBuffer=true keeps
+ * the buffer alive until we read it.
+ */
+const captureMapFrame = (mapInstance, [W, H]) =>
+  new Promise(resolve => {
+    const doCapture = () => {
+      const src = mapInstance.getCanvas();
+      const out = document.createElement('canvas');
+      out.width = W; out.height = H;
+      out.getContext('2d').drawImage(src, 0, 0, W, H);
+      out.toBlob(async blob => resolve(new Uint8Array(await blob.arrayBuffer())), 'image/png', 0.95);
+    };
+    mapInstance.once('render', doCapture);
+    mapInstance.triggerRepaint();
+  });
+
+// Draggable Floating Panel
+function FloatingPanel({ title, visible, onClose, defaultPos, children, footerChildren }) {
+  const [pos, setPos] = useState(defaultPos || { x: 20, y: 80 });
+  const [collapsed, setPanelCollapsed] = useState(false);
+  const dragRef = useRef(null);
+
+  const onMouseDown = (e) => {
+    if (e.target.closest('.no-drag')) return;
+    dragRef.current = { mx: e.clientX, my: e.clientY, px: pos.x, py: pos.y };
+  };
+  useEffect(() => {
+    const move = e => {
+      if (!dragRef.current) return;
+      setPos({ x: Math.max(0, dragRef.current.px + e.clientX - dragRef.current.mx), y: Math.max(0, dragRef.current.py + e.clientY - dragRef.current.my) });
+    };
+    const up = () => { dragRef.current = null; };
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+  }, []);
+
+  if (!visible) return null;
   return (
-    <div>
-      <div className="section-title collapsible-header" onClick={() => onToggle(id)}>
-        <span>{isCollapsed ? '▶' : '▼'}</span> {title}
-      </div>
-      {!isCollapsed && (
-        <div className="collapsible-content">
-          {children}
+    <div className="floating-panel" style={{ left: pos.x, top: pos.y }}>
+      <div className="panel-header" onMouseDown={onMouseDown}>
+        <div className="panel-title-row">
+          <span className="panel-dot" />
+          <span className="panel-title">{title}</span>
         </div>
+        <div className="no-drag panel-controls">
+          <button className="panel-ctrl-btn" onClick={() => setPanelCollapsed(!collapsed)}>{collapsed ? '▼' : '▲'}</button>
+          <button className="panel-ctrl-btn" onClick={onClose}>×</button>
+        </div>
+      </div>
+      {!collapsed && (
+        <>
+          <div className="panel-body">{children}</div>
+          {footerChildren && <div className="panel-footer">{footerChildren}</div>}
+        </>
       )}
     </div>
   );
-};
+}
+
+const Section = ({ title, id, collapsed, onToggle, children }) => (
+  <div className="section-group">
+    <div className="section-header" onClick={() => onToggle(id)}>
+      <span className="chevron">{collapsed ? '▶' : '▼'}</span>{title}
+    </div>
+    {!collapsed && <div className="section-body">{children}</div>}
+  </div>
+);
 
 function App() {
-  const mapContainer = useRef(null);
-  const map = useRef(null);
-  const mapWrapper = useRef(null); // Para html2canvas
-  
-  // State
-  const [waypoints, setWaypoints] = useState([]);
+  const mapContainer = useRef(null), map = useRef(null), mapWrapper = useRef(null);
   const [pins, setPins] = useState([]);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [status, setStatus] = useState("Ready.");
-  const [aeData, setAeData] = useState([]);
+  const [status, setStatus] = useState('Ready.');
   const [isRendering, setIsRendering] = useState(false);
-  const [collapsed, setCollapsed] = useState({});
+  const [panelVisible, setPanelVisible] = useState(true);
+  const [sec, setSec] = useState({});
   const [settings, setSettings] = useState({
-    resolution: '1920x1080',
-    mapStyle: 'https://tiles.openfreemap.org/styles/bright',
-    pathColor: '#F72210',
-    pathWidth: 5,
-    pathStyle: 'dashed',
-    duration: 3,
-    fps: 30,
-    easing: 'easeInOutCubic',
-    lineAnimDelay: 0,
-    lineAnimDuration: 3,
-    lineEasing: 'linear'
+    resolution: '1920x1080', mapStyle: 'https://tiles.openfreemap.org/styles/bright',
+    pathColor: '#ec4899', pathWidth: 5, fps: 30, exportDuration: 3,
+    // Animation timing controls
+    animStart: 0,       // sequence start time (seconds)
+    animEnd: 0,         // 0 = use full sequence length
+    pathStart: 0,       // pathProgress animation: start time
+    pathEnd: 0,         // 0 = use full sequence length
   });
+  const [activePinId, setActivePinId] = useState(null);
+  const [liveSync, setLiveSync] = useState(false); // live map→Theatre sync toggle
+  const toggleSec = id => setSec(p => ({ ...p, [id]: !p[id] }));
 
-  const toggleCollapsed = (id) => {
-    setCollapsed(prev => ({...prev, [id]: !prev[id]}));
-  };
-
-  // Refs para dados mutáveis acessados em callbacks do mapa
-  const customPathCoords = useRef([]);
-  const pinsRef = useRef([]); // Mantém referência atualizada dos pins para manipulação direta
-  const isDrawingRef = useRef(isDrawing); // Ref para acesso atualizado dentro do listener
+  const customPathCoords = useRef([]), pinsRef = useRef([]);
+  const isDrawingRef = useRef(false);
   useEffect(() => { isDrawingRef.current = isDrawing; }, [isDrawing]);
 
-  // Inicialização do Mapa
+  const ffmpegRef = useRef(new FFmpeg());
+  const mapObj = useRef(null);
+  const [ffmpegLoaded, setFfmpegLoaded] = useState(false);
+  const liveSyncRef = useRef(liveSync);
+  useEffect(() => { liveSyncRef.current = liveSync; }, [liveSync]);
+
+  // Debounce ref for live sync
+  const syncTimer = useRef(null);
+
+  // Dragging state for pins
+  const dragState = useRef({ id: null, active: false });
+
   useEffect(() => {
-    if (map.current) return;
-    map.current = new maplibregl.Map({
-      container: mapContainer.current,
-      style: settings.mapStyle,
-      center: [-46.633, -23.550],
-      zoom: 12,
-      preserveDrawingBuffer: true,
-      antialias: true,
-      attributionControl: false
-    });
+    (async () => {
+      try {
+        const base = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+        await ffmpegRef.current.load({
+          coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
+          wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+        });
+        setFfmpegLoaded(true);
+      } catch (e) { console.warn('FFmpeg load failed:', e); }
+    })();
+  }, []);
 
-    map.current.on('load', () => {
-      setupLayers();
-      updateViewport();
-    });
-
-    map.current.on('click', (e) => {
-      if (isDrawingRef.current) {
-        customPathCoords.current.push([e.lngLat.lng, e.lngLat.lat]);
-        syncPathLayer();
-      }
-    });
-  }, []); // Executa apenas uma vez
-
-  // Efeito para atualizar viewport quando resolução muda
-  useEffect(() => {
-    const handleResize = () => updateViewport();
-    window.addEventListener('resize', handleResize);
-    updateViewport();
-    return () => window.removeEventListener('resize', handleResize);
-  }, [settings.resolution]);
-
-  // Efeito para atualizar estilo do mapa
-  useEffect(() => {
-    if (!map.current) return;
-    map.current.setStyle(settings.mapStyle);
-    map.current.once('styledata', setupLayers);
-  }, [settings.mapStyle]);
-
-  // Efeito para atualizar estilo da linha dinamicamente
-  useEffect(() => {
-    if (map.current && map.current.getLayer('route-line')) {
+  const syncPathLayer = useCallback((coords = customPathCoords.current) => {
+    if (map.current?.getSource('route-source')) {
       map.current.setPaintProperty('route-line', 'line-color', settings.pathColor);
       map.current.setPaintProperty('route-line', 'line-width', parseFloat(settings.pathWidth));
-      map.current.setPaintProperty('route-line', 'line-dasharray', 
-        settings.pathStyle === 'dashed' ? [2, 2] : 
-        settings.pathStyle === 'dotted' ? [0.1, 2] : [1, 0]
-      );
+      map.current.getSource('route-source').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords } });
     }
-  }, [settings.pathColor, settings.pathWidth, settings.pathStyle]);
+  }, [settings.pathColor, settings.pathWidth]);
 
-  const setupLayers = () => {
-    if (!map.current) return;
-    const style = map.current.getStyle();
-    if (style && style.layers) {
-      style.layers.forEach(l => {
-        if (l.type === 'symbol' && !l.id.includes('pins')) map.current.setLayoutProperty(l.id, 'visibility', 'none');
-      });
+  const syncPinsLayer = useCallback(() => {
+    if (map.current?.getSource('pins-source')) {
+      const features = pinsRef.current.map(p => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+        properties: {
+          id: p.id,
+          imageId: `pin-${p.id}`,
+          text: p.text || '',
+          textScale: p.textScale || 1,
+          textOffsetX: p.textOffsetX || 0,
+          textOffsetY: p.textOffsetY || 0,
+          textColor: p.textColor || '#ffffff',
+          fontFamily: p.fontFamily || 'Inter, sans-serif'
+        }
+      }));
+      console.log('Syncing pins layer with features:', features.length);
+      map.current.getSource('pins-source').setData({ type: 'FeatureCollection', features });
+    } else {
+      console.warn('pins-source not found!');
     }
+  }, []);
+
+  const setupLayers = useCallback(() => {
+    if (!map.current) return;
     if (!map.current.getSource('route-source')) {
       map.current.addSource('route-source', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } } });
+      map.current.addLayer({ id: 'route-line', type: 'line', source: 'route-source', paint: { 'line-color': settings.pathColor, 'line-width': parseFloat(settings.pathWidth) } });
+    }
+    if (!map.current.getSource('pins-source')) {
+      map.current.addSource('pins-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+
+      // Layer 1: The Pin Icon
       map.current.addLayer({
-        id: 'route-line',
-        type: 'line',
-        source: 'route-source',
-        paint: { 
-          'line-color': settings.pathColor, 
-          'line-width': parseFloat(settings.pathWidth), 
-          'line-dasharray': settings.pathStyle === 'dashed' ? [2, 2] : settings.pathStyle === 'dotted' ? [0.1, 2] : [1, 0]
+        id: 'pins-icon-layer',
+        type: 'symbol',
+        source: 'pins-source',
+        layout: {
+          'icon-image': ['get', 'imageId'],
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'icon-anchor': 'bottom'
+        }
+      });
+
+      // Layer 2: The Pin Text
+      map.current.addLayer({
+        id: 'pins-text-layer',
+        type: 'symbol',
+        source: 'pins-source',
+        layout: {
+          'text-field': ['get', 'text'],
+          'text-size': ['*', 12, ['get', 'textScale']],
+          'text-anchor': 'bottom',
+          'text-offset': [
+            '/', ['get', 'textOffsetX'], 10,
+            '-', ['/', ['get', 'textOffsetY'], 10], 4.2
+          ],
+          'text-allow-overlap': true,
+          'text-ignore-placement': true
+        },
+        paint: {
+          'text-color': 'rgba(255,255,255,0)', // Hide text visually, we'll draw it on canvas
+          'text-halo-color': 'rgba(0,0,0,0)',
+          'text-halo-width': 0
         }
       });
     }
     syncPathLayer();
-  };
+    syncPinsLayer();
+  }, [settings.pathColor, settings.pathWidth, syncPathLayer, syncPinsLayer]);
 
-  const syncPathLayer = (coords = customPathCoords.current) => {
-    if (map.current && map.current.getSource('route-source')) {
-      map.current.setPaintProperty('route-line', 'line-color', settings.pathColor);
-      map.current.getSource('route-source').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords } });
-    }
-  };
-
-  const updateViewport = () => {
-    if (!mapWrapper.current || !mapContainer.current) return;
+  const updateViewport = useCallback(() => {
+    if (!mapWrapper.current) return;
     const [w, h] = settings.resolution.split('x').map(Number);
-    mapWrapper.current.style.width = w + 'px';
-    mapWrapper.current.style.height = h + 'px';
-    
-    // Calcular Scale para caber na tela
+    mapWrapper.current.style.width = w + 'px'; mapWrapper.current.style.height = h + 'px';
     const vp = mapWrapper.current.parentElement;
     const scale = Math.min((vp.clientWidth - 40) / w, (vp.clientHeight - 40) / h);
     mapWrapper.current.style.transform = `scale(${scale})`;
-    requestAnimationFrame(() => {
-      if (map.current) map.current.resize();
-    });
-  };
+    requestAnimationFrame(() => map.current?.resize());
+  }, [settings.resolution]);
 
-  const importInputRef = useRef(null);
-
-  const handleSave = () => {
-    const cleanPins = pins.map(p => {
-      const { marker, ...rest } = p;
-      return rest;
-    });
-
-    const dataToSave = {
-      settings,
-      waypoints,
-      pins: cleanPins,
-      customPath: customPathCoords.current,
-    };
-
-    const blob = new Blob([JSON.stringify(dataToSave, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `map-anim-project-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
-  const handleLoad = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const data = JSON.parse(event.target.result);
-        
-        // Clear existing markers and refs before loading new data
-        pinsRef.current.forEach(p => p.marker?.remove());
-        pinsRef.current = [];
-        
-        setSettings(data.settings);
-        setWaypoints(data.waypoints || []);
-        customPathCoords.current = data.customPath || [];
-
-        // Set pins state first
-        setPins(data.pins || []);
-
-        // Re-create markers for loaded pins
-        for (const pin of (data.pins || [])) {
-          await createPinMarker(pin);
-          pinsRef.current.push(pin);
-        }
-
-        // Update map view and layers
-        if (map.current) {
-          map.current.setStyle(data.settings.mapStyle); // This will trigger resync via 'styledata'
-          syncPathLayer();
-        }
-
-      } catch (err) {
-        alert('Failed to load or parse project file.');
-        console.error(err);
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = null; // Reset file input
-  };
-
-  // --- Lógica de Pins ---
-
-  // Efeito para recriar os pins quando o estilo do mapa é alterado, pois a troca de estilo limpa os marcadores.
   useEffect(() => {
-    if (!map.current) return;
+    window.addEventListener('resize', updateViewport); updateViewport();
+    return () => window.removeEventListener('resize', updateViewport);
+  }, [updateViewport]);
 
-    const resyncPins = async () => {
-      // Itera sobre a referência dos pins e recria cada um no mapa.
-      for (const pin of pinsRef.current) {
-        await createPinMarker(pin);
+  useEffect(() => {
+    if (map.current) { map.current.setStyle(settings.mapStyle); map.current.once('styledata', setupLayers); }
+  }, [settings.mapStyle, setupLayers]);
+
+  useEffect(() => {
+    if (map.current) return;
+    map.current = new maplibregl.Map({
+      container: mapContainer.current, style: settings.mapStyle,
+      center: [-46.633, -23.550], zoom: 12, preserveDrawingBuffer: true, antialias: true, attributionControl: false,
+    });
+
+    map.current.on('load', () => {
+      map.current.on('styleimagemissing', e => {
+        const c = document.createElement('canvas'); c.width = 1; c.height = 1;
+        if (!map.current.hasImage(e.id)) map.current.addImage(e.id, c.getContext('2d').getImageData(0, 0, 1, 1));
+      });
+      const geocoder = new MaplibreGeocoder({
+        forwardGeocode: async (cfg) => {
+          try {
+            const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${cfg.query}&format=geojson&addressdetails=1&limit=5`);
+            const g = await r.json();
+            return { features: g.features.map(f => ({ ...f, place_name: f.properties.display_name, center: f.geometry.coordinates })) };
+          } catch { return { features: [] }; }
+        },
+      }, { maplibregl });
+      map.current.addControl(geocoder, 'top-left');
+      setupLayers(); updateViewport();
+    });
+
+    map.current.on('click', e => {
+      if (isDrawingRef.current) { customPathCoords.current.push([e.lngLat.lng, e.lngLat.lat]); syncPathLayer(); }
+    });
+
+    // Native pin dragging logic (bind to icon layer)
+    map.current.on('mousedown', 'pins-icon-layer', e => {
+      e.preventDefault();
+      const feature = e.features[0];
+      if (feature) {
+        dragState.current = { id: feature.properties.id, active: true };
+        map.current.getCanvasContainer().style.cursor = 'grabbing';
       }
-    };
+    });
 
-    map.current.on('styledata', resyncPins);
-
-    return () => {
-      if (map.current) {
-        map.current.off('styledata', resyncPins);
+    map.current.on('mousemove', e => {
+      if (dragState.current.active && dragState.current.id) {
+        const id = dragState.current.id;
+        const pList = pinsRef.current;
+        const idx = pList.findIndex(p => p.id === id);
+        if (idx !== -1) {
+          pList[idx].lng = e.lngLat.lng;
+          pList[idx].lat = e.lngLat.lat;
+          syncPinsLayer();
+        }
       }
-    };
-  }, []); // Registra o listener uma única vez após a montagem do mapa.
+    });
 
-  const createPinCanvas = async (pin) => {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    map.current.on('mouseup', () => {
+      if (dragState.current.active) {
+        dragState.current.active = false;
+        map.current.getCanvasContainer().style.cursor = '';
+        setPins([...pinsRef.current]); // trigger React re-render
+      }
+    });
 
-    const baseWidth = (pin.style === 'bubble') ? 100 : 50;
-    const baseHeight = 50;
-    const scale = pin.scale || 1.0;
-    const dpr = window.devicePixelRatio || 1;
+    // Live sync: when map moves, debounce-update Theatre.js props
+    map.current.on('moveend', () => {
+      if (!liveSyncRef.current || !mapObj.current) return;
+      clearTimeout(syncTimer.current);
+      syncTimer.current = setTimeout(() => {
+        const c = map.current.getCenter();
+        studio.transaction(({ set }) => {
+          set(mapObj.current.props, {
+            lng: c.lng, lat: c.lat,
+            zoom: map.current.getZoom(),
+            pitch: map.current.getPitch(),
+            bearing: map.current.getBearing(),
+            pathProgress: 1,
+          });
+        });
+      }, 300);
+    });
 
-    const canvasWidth = baseWidth * scale * dpr;
-    const canvasHeight = baseHeight * scale * dpr;
-    
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-    canvas.style.width = `${baseWidth * scale}px`;
-    canvas.style.height = `${baseHeight * scale}px`;
+    const c = map.current.getCenter();
+    mapObj.current = sheet.object('Map', {
+      lng: types.number(c.lng, { range: [-180, 180] }),
+      lat: types.number(c.lat, { range: [-90, 90] }),
+      zoom: types.number(map.current.getZoom(), { range: [0, 24] }),
+      pitch: types.number(map.current.getPitch(), { range: [0, 85] }),
+      bearing: types.number(map.current.getBearing(), { range: [-180, 180] }),
+      pathProgress: types.number(1, { range: [0, 1] }),
+    });
+
+    mapObj.current.onValuesChange(v => {
+      if (!map.current || isRendering) return;
+      const lng = typeof v.lng === 'number' ? v.lng : map.current.getCenter().lng;
+      const lat = typeof v.lat === 'number' ? v.lat : map.current.getCenter().lat;
+      const zoom = typeof v.zoom === 'number' ? v.zoom : map.current.getZoom();
+      const pitch = typeof v.pitch === 'number' ? v.pitch : map.current.getPitch();
+      const bearing = typeof v.bearing === 'number' ? v.bearing : map.current.getBearing();
+      map.current.jumpTo({ center: [lng, lat], zoom, pitch, bearing });
+      if (customPathCoords.current.length > 1) syncPathLayer(getInterpolatedPath(customPathCoords.current, v.pathProgress || 0));
+    });
+  }, []); // eslint-disable-line
+
+  /* ── Pin helpers ─────────────────────────── */
+  const createPinCanvas = async pin => {
+    const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
+    const bw = pin.style === 'bubble' ? 100 : 50, scale = pin.scale || 1, dpr = window.devicePixelRatio || 1;
+
+    // We add a large padding to the canvas so text doesn't clip when offset.
+    const padX = 150 * dpr; // padding on each side
+    const padY = 150 * dpr; // padding on top/bottom
+    const imgW = bw * scale * dpr;
+    const imgH = 50 * scale * dpr;
+
+    canvas.width = imgW + (padX * 2);
+    canvas.height = imgH + (padY * 2);
 
     const img = new Image();
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent((SVGS[pin.style] || SVGS.classic).replace(/%C/g, pin.color));
-    
-    await new Promise((resolve, reject) => {
-      img.onload = resolve;
-      img.onerror = reject;
-    });
+    await new Promise(r => img.onload = r);
 
-    ctx.drawImage(img, 0, 0, canvasWidth, canvasHeight);
-    
+    // Draw the pin image in the center horizontally, and offset vertically so the tip of the pin
+    // is exactly sitting at a predictable anchor. We anchor nearest to the bottom.
+    // We leave padY space above, and padY space below the image.
+    const drawX = padX;
+    const drawY = padY;
+    ctx.drawImage(img, drawX, drawY, imgW, imgH);
+
+    // Draw text natively directly onto the image buffer
     if (pin.text) {
-      const textScale = pin.textScale || 1.0;
-      const fontSize = 12 * scale * textScale * dpr;
-      ctx.font = `800 ${fontSize}px sans-serif`;
-      ctx.fillStyle = 'white';
+      const fs = 12 * scale * (pin.textScale || 1) * dpr;
+      const font = pin.fontFamily || 'Inter, sans-serif';
+      ctx.font = `800 ${fs}px ${font}`;
+      ctx.fillStyle = pin.textColor || '#fff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      
+
+      // Simple dark shadow outline for contrast
       ctx.shadowColor = 'rgba(0,0,0,0.8)';
       ctx.shadowBlur = 2 * dpr;
-      ctx.shadowOffsetX = 1 * dpr;
-      ctx.shadowOffsetY = 1 * dpr;
-      
-      const textX = (canvasWidth / 2) + ((pin.textOffsetX || 0) * scale * dpr);
-      const textY = (canvasHeight / 2) + ((pin.textOffsetY || 0) * scale * dpr);
 
-      ctx.fillText(pin.text, textX, textY);
+      // We can also stroke the text slightly to make it pop like MapLibre does
+      ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+      ctx.lineWidth = 2 * dpr;
+
+      // Base text coordinates (centered over the image)
+      const textBaseX = drawX + (imgW / 2);
+      const textBaseY = drawY + (imgH / 2.3);
+
+      const px = textBaseX + (pin.textOffsetX || 0) * dpr;
+      const py = textBaseY + (pin.textOffsetY || 0) * dpr;
+
+      ctx.strokeText(pin.text, px, py);
+      ctx.fillText(pin.text, px, py);
     }
-    
-    return canvas;
-  }
 
-  const addPin = async () => {
-    const center = map.current.getCenter();
-    const newPin = {
-      id: Date.now(),
-      lng: center.lng, lat: center.lat,
-      text: "Label", color: "#F72210", scale: 1.0, textScale: 1.0,
-      style: 'bubble', textOffsetX: 0, textOffsetY: 0,
-      marker: null
+    // Since the canvas is now much taller to accommodate the text offset, MapLibre's 'bottom' anchor
+    // would target the bottom of the padded canvas, not the tip of the pin.
+    // We can offset the icon rendering in MapLibre or pass a custom anchor/height.
+    // MapLibre centers the icon above the point if anchor is 'bottom', assuming the
+    // point is at the bottom middle. 
+    // Since our pin image sits at drawY, the tip of the pin is at `drawY + imgH`.
+    // The empty padding below the pin is `padY`.
+    // We'll leave the anchor at 'bottom' in MapLibre, but we'll trim the canvas exactly at the pin's tip
+    // so we don't have to fight map offset math.
+
+    // Create a new strictly trimmed canvas that cuts off everything below the pin tip,
+    // so the 'bottom' anchor of MapLibre aligns perfectly with the pin tip, but leaves the huge ceiling for text.
+    const trimmedH = drawY + imgH;
+    const trimmedCanvas = document.createElement('canvas');
+    trimmedCanvas.width = canvas.width;
+    trimmedCanvas.height = trimmedH;
+    const tCtx = trimmedCanvas.getContext('2d');
+    tCtx.drawImage(canvas, 0, 0, canvas.width, trimmedH, 0, 0, canvas.width, trimmedH);
+
+    return {
+      data: tCtx.getImageData(0, 0, trimmedCanvas.width, trimmedCanvas.height),
+      w: trimmedCanvas.width,
+      h: trimmedCanvas.height,
+      style: pin.style
     };
-    
-    await createPinMarker(newPin);
-    setPins(prev => [...prev, newPin]);
-    pinsRef.current.push(newPin);
   };
 
-  const createPinMarker = async (pin) => {
-    const oldMarker = pin.marker;
-
-    if (oldMarker) {
-      oldMarker.getElement().style.visibility = 'hidden';
+  const createPinMarker = useCallback(async pin => {
+    if (!map.current) return;
+    try {
+      const { data } = await createPinCanvas(pin);
+      const imgId = `pin-${pin.id}`;
+      // MapLibre requires removing an image before updating it if it already exists
+      if (map.current.hasImage(imgId)) {
+        map.current.removeImage(imgId);
+      }
+      map.current.addImage(imgId, data);
+      syncPinsLayer();
+      // Force repaint to make it appear immediately
+      map.current.triggerRepaint();
+    } catch (err) {
+      console.error('Failed to create pin marker image:', err);
     }
-
-    const pinElement = await createPinCanvas(pin);
-    pinElement.style.cursor = 'move';
-
-    const marker = new maplibregl.Marker({
-      element: pinElement,
-      draggable: true,
-      anchor: (pin.style === 'dot') ? 'center' : 'bottom'
-    })
-    .setLngLat([pin.lng, pin.lat])
-    .addTo(map.current);
-
-    marker.on('dragend', () => {
-      const l = marker.getLngLat();
-      pin.lng = l.lng;
-      pin.lat = l.lat;
-      setPins(prev => prev.map(p => p.id === pin.id ? { ...p, lng: l.lng, lat: l.lat } : p));
-    });
-
-    pin.marker = marker;
-
-    if (oldMarker) {
-      oldMarker.remove();
-    }
-  };
+  }, [syncPinsLayer]); // eslint-disable-line
 
   const updatePin = async (id, field, value) => {
-    const val = ['scale', 'textScale', 'textOffsetX', 'textOffsetY'].includes(field) ? parseFloat(value) : value;
-    
-    const pinIdx = pinsRef.current.findIndex(p => p.id === id);
-    if (pinIdx !== -1) {
-      const p = pinsRef.current[pinIdx];
-      p[field] = val;
-      await createPinMarker(p);
-      
-      setPins(prev => prev.map(item => item.id === id ? { ...item, [field]: val } : item));
+    const isFloat = ['scale', 'textScale'].includes(field);
+    const isInt = ['textOffsetX', 'textOffsetY'].includes(field);
+    let val = value;
+    if (isFloat) val = parseFloat(value);
+    if (isInt) val = parseInt(value, 10);
+
+    const idx = pinsRef.current.findIndex(p => p.id === id);
+    if (idx !== -1) {
+      const p = { ...pinsRef.current[idx], [field]: val };
+      pinsRef.current[idx] = p; await createPinMarker(p);
+      setPins(prev => prev.map(x => x.id === id ? p : x));
     }
   };
 
-  const removePin = (id) => {
-    const p = pinsRef.current.find(x => x.id === id);
-    if (p && p.marker) p.marker.remove();
+  const addPin = async () => {
+    const c = map.current.getCenter();
+    const p = {
+      id: Date.now(), lng: c.lng, lat: c.lat, text: 'Pin', color: '#ec4899',
+      scale: 1.0, style: 'bubble', textScale: 1, textOffsetX: 0, textOffsetY: 0,
+      textColor: '#ffffff', fontFamily: 'Inter, sans-serif', marker: null
+    };
+    pinsRef.current.push(p);
+    await createPinMarker(p);
+    setPins(prev => [...prev, p]);
+  };
+
+  const removePin = id => {
     pinsRef.current = pinsRef.current.filter(x => x.id !== id);
     setPins(prev => prev.filter(x => x.id !== id));
+    if (activePinId === id) setActivePinId(null);
+    if (map.current?.hasImage(`pin-${id}`)) map.current.removeImage(`pin-${id}`);
+    syncPinsLayer();
   };
 
-  // --- Lógica de Waypoints ---
-  const addWaypoint = () => {
+  const syncToTimeline = () => {
+    if (!map.current || !mapObj.current) return;
     const c = map.current.getCenter();
-    const w = {
-      id: Date.now(),
-      lat: c.lat, lng: c.lng,
-      zoom: map.current.getZoom(),
-      pitch: map.current.getPitch(),
-      bearing: map.current.getBearing()
-    };
-    setWaypoints([...waypoints, w]);
-  };
-
-  const updateWaypoint = (id) => {
-    const c = map.current.getCenter();
-    setWaypoints(waypoints.map(w => w.id === id ? {
-      ...w, lat: c.lat, lng: c.lng, zoom: map.current.getZoom(), pitch: map.current.getPitch(), bearing: map.current.getBearing()
-    } : w));
-  };
-
-  const exportPNG = async (id) => {
-    const w = waypoints.find(x => x.id === id);
-    if (!w || !map.current) return;
-    
-    map.current.jumpTo({
-      center: [w.lng, w.lat],
-      zoom: w.zoom,
-      pitch: w.pitch,
-      bearing: w.bearing
+    studio.transaction(({ set }) => {
+      set(mapObj.current.props, { lng: c.lng, lat: c.lat, zoom: map.current.getZoom(), pitch: map.current.getPitch(), bearing: map.current.getBearing(), pathProgress: 1 });
     });
-
-    await new Promise(r => map.current.once('idle', r));
-
-    // Utiliza html2canvas para capturar o container, que inclui os pins em HTML.
-    const canvas = await html2canvas(mapWrapper.current, { useCORS: true, scale: 1, allowTaint: true, logging: false, backgroundColor: null });
-    
-    const a = document.createElement('a');
-    a.href = canvas.toDataURL('image/png');
-    a.download = `waypoint_${id}.png`;
-    a.click();
+    setStatus('Captured!'); setTimeout(() => setStatus('Ready.'), 1500);
   };
 
-  const distance = (p1, p2) => Math.sqrt(Math.pow(p2[0] - p1[0], 2) + Math.pow(p2[1] - p1[1], 2));
+  /* ── Export helpers ──────────────────────── */
+  const getResolution = () => settings.resolution.split('x').map(Number);
 
-  const getInterpolatedPath = (coords, progress) => {
-    if (coords.length < 2 || progress <= 0) return [];
-    if (progress >= 1) return coords;
+  const collectFrames = async (fps) => {
+    // If the user specifies an export duration, use it! Otherwise fallback.
+    const duration = settings.exportDuration > 0 ? settings.exportDuration : (sheet.sequence.length > 0 ? sheet.sequence.length : 10);
+    const start = 0;
 
-    const totalLength = coords.reduce((length, point, i) => {
-      if (i === 0) return 0;
-      return length + distance(coords[i - 1], point);
-    }, 0);
-
-    const targetLength = totalLength * progress;
-    let accumulatedLength = 0;
-    const newPath = [];
-
-    for (let i = 0; i < coords.length - 1; i++) {
-      const p1 = coords[i];
-      const p2 = coords[i + 1];
-      const segmentLength = distance(p1, p2);
-
-      newPath.push(p1);
-
-      if (accumulatedLength + segmentLength >= targetLength) {
-        const remainingLength = targetLength - accumulatedLength;
-        const ratio = remainingLength / segmentLength;
-        const interpolatedPoint = [
-          p1[0] + (p2[0] - p1[0]) * ratio,
-          p1[1] + (p2[1] - p1[1]) * ratio,
-        ];
-        newPath.push(interpolatedPoint);
-        return newPath;
-      }
-      accumulatedLength += segmentLength;
+    if (duration <= 0) {
+      throw new Error(`Duração inválida (${duration.toFixed(2)}s).`);
     }
-    return newPath;
+    const total = Math.ceil(duration * fps);
+    const frames = [];
+    for (let i = 0; i <= total; i++) {
+      sheet.sequence.position = start + (i / fps);
+      await new Promise(r => setTimeout(r, 60));
+      await new Promise(r => map.current.isMoving() ? map.current.once('idle', r) : r());
+      frames.push(await captureMapFrame(map.current, getResolution()));
+      setStatus(`Rendering: ${Math.round((i / total) * 100)}%`);
+    }
+    return frames;
   };
 
-  // --- Renderização (Zip) ---
-  const generateZip = async () => {
-    if (waypoints.length < 2) { alert("Min 2 Waypoints"); return; }
-    
+  const generateMP4 = async () => {
+    if (!ffmpegLoaded) { alert('FFmpeg still loading...'); return; }
     setIsRendering(true);
-    setStatus("Initializing...");
-
+    const ffmpeg = ffmpegRef.current;
     try {
-      const zip = new JSZip();
-      const framesPerLeg = Math.ceil(settings.duration * settings.fps);
-      const totalFrames = framesPerLeg * (waypoints.length - 1);
-      const easingFunc = EASINGS[settings.easing];
-      const lineEasingFunc = EASINGS[settings.lineEasing] || EASINGS.linear;
-      let totalIdx = 0;
-      let collectedAeData = [];
+      // Wipe any old files from MEMFS
+      try { const ls = await ffmpeg.listDir('/'); for (const f of ls) if (!f.isDir) await ffmpeg.deleteFile(f.name).catch(() => { }); } catch (_) { }
 
-      for (let p = 0; p < waypoints.length - 1; p++) {
-        const A = waypoints[p];
-        const B = waypoints[p + 1];
+      setStatus('Capturing frames...');
+      const fps = settings.fps || 30;
+      const frames = await collectFrames(fps);
 
-        for (let i = 0; i < framesPerLeg; i++) {
-          const t = i / framesPerLeg;
-          const easedT = easingFunc(t);
-          
-          map.current.jumpTo({
-            center: [A.lng + (B.lng - A.lng) * easedT, A.lat + (B.lat - A.lat) * easedT],
-            zoom: A.zoom + (B.zoom - A.zoom) * easedT,
-            pitch: A.pitch + (B.pitch - A.pitch) * easedT,
-            bearing: A.bearing + (B.bearing - A.bearing) * easedT
-          });
+      setStatus('Writing frames...');
+      for (let i = 0; i < frames.length; i++) await ffmpeg.writeFile(`f${i.toString().padStart(5, '0')}.png`, frames[i]);
 
-          // Atualizar linha
-          const currentTime = totalIdx / settings.fps;
-          let lineProgress = 0;
-          const lDelay = settings.lineAnimDelay || 0;
-          const lDur = settings.lineAnimDuration || 0.1;
+      setStatus('Encoding...');
+      await ffmpeg.exec(['-framerate', String(fps), '-i', 'f%05d.png', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-y', 'o.mp4']);
 
-          if (currentTime > lDelay) {
-              lineProgress = Math.min(1, (currentTime - lDelay) / lDur);
-              lineProgress = lineEasingFunc(lineProgress);
-          }
-
-          if (customPathCoords.current.length > 1) {
-              syncPathLayer(getInterpolatedPath(customPathCoords.current, lineProgress));
-          }
-
-          await new Promise(r => map.current.once('idle', r));
-
-          // AE Data
-          const c = map.current.getCenter();
-          const wpProjections = waypoints.map(wp => {
-              const px = map.current.project([wp.lng, wp.lat]);
-              return { id: wp.id, x: px.x, y: px.y };
-          });
-
-          const pinProjections = pinsRef.current.map(pin => {
-            const px = map.current.project([pin.lng, pin.lat]);
-            return { id: pin.id, text: pin.text, x: px.x, y: px.y };
-          });
-
-          collectedAeData.push({
-              time: totalIdx / settings.fps,
-              zoom: map.current.getZoom(),
-              bearing: map.current.getBearing(),
-              pitch: map.current.getPitch(),
-              center: [c.lng, c.lat],
-              waypoints: wpProjections,
-              pins: pinProjections
-          });
-
-          // Capture
-          map.current.triggerRepaint();
-          await new Promise(r => setTimeout(r, 50)); // Pequeno delay para garantir sync do DOM
-          const canvas = await html2canvas(mapWrapper.current, { useCORS: true, scale: 1, allowTaint: true, logging: false, backgroundColor: null });
-          zip.file(`frame_${totalIdx.toString().padStart(5, '0')}.png`, canvas.toDataURL('image/png').split(',')[1], { base64: true });
-
-          totalIdx++;
-          setStatus(`Rendering: ${Math.round((totalIdx / totalFrames) * 100)}%`);
-        }
-      }
-
-      setAeData(collectedAeData);
-      const blob = await zip.generateAsync({ type: "blob" });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = "anim.zip";
-      a.click();
-    } finally {
-      setIsRendering(false);
-      setStatus("Ready.");
-      syncPathLayer(); // Reset path
-    }
+      const data = await ffmpeg.readFile('o.mp4');
+      const url = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+      Object.assign(document.createElement('a'), { href: url, download: `map_${Date.now()}.mp4` }).click();
+      setStatus('Done! 🎉'); setTimeout(() => setStatus('Ready.'), 3000);
+    } catch (e) { console.error(e); alert(`Export failed: ${e?.message}`); }
+    finally { setIsRendering(false); }
   };
 
-  const downloadAEScript = () => {
-    if (!aeData || aeData.length === 0) return;
-    const [w, h] = settings.resolution.split('x').map(Number);
-    const duration = aeData[aeData.length - 1].time;
-
-    const waypointLayers = waypoints.map((wp, i) => `
-        var wp_${wp.id} = comp.layers.addNull();
-        wp_${wp.id}.name = "Tracker WP ${i + 1}";
-        wp_${wp.id}.label = 10;
-        wpNulls[${wp.id}] = wp_${wp.id};
-    `).join('');
-
-    const pinLayers = pins.map(p => {
-        const safeName = p.text ? p.text.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').replace(/\r/g, '') : '';
-        return `
-        var pin_${p.id} = comp.layers.addNull();
-        pin_${p.id}.name = "Pin ${safeName}";
-        pin_${p.id}.label = 9;
-        pinNulls[${p.id}] = pin_${p.id};
-    `}).join('');
-
-    const keyframes = aeData.map(d => {
-        const wpKeyframes = d.waypoints.map(wp =>
-            `if (wpNulls[${wp.id}]) { wpNulls[${wp.id}].transform.position.setValueAtTime(${d.time}, [${wp.x}, ${wp.y}]); }`
-        ).join('\n            ');
-        const pinKeyframes = (d.pins || []).map(p =>
-            `if (pinNulls[${p.id}]) { pinNulls[${p.id}].transform.position.setValueAtTime(${d.time}, [${p.x}, ${p.y}]); }`
-        ).join('\n            ');
-
-        return `
-            sZoom.property("Slider").setValueAtTime(${d.time}, ${d.zoom});
-            sBear.property("Slider").setValueAtTime(${d.time}, ${d.bearing});
-            sPitch.property("Slider").setValueAtTime(${d.time}, ${d.pitch});
-            ${wpKeyframes}
-            ${pinKeyframes}
-        `
-    }).join('');
-
-    let script = `
-    (function() {
-        app.beginUndoGroup("Import Map Data");
-        var comp = app.project.items.addComp("Map Animation", ${w}, ${h}, 1, ${duration + 1}, ${settings.fps});
-        if (!comp) {
-            alert("Failed to create composition.");
-            return;
-        }
-        var camNull = comp.layers.addNull();
-        camNull.name = "Map Camera Control";
-        var sZoom = camNull.Effects.addProperty("ADBE Slider Control");
-        sZoom.name = "Map Zoom";
-        var sBear = camNull.Effects.addProperty("ADBE Slider Control");
-        sBear.name = "Map Bearing";
-        var sPitch = camNull.Effects.addProperty("ADBE Slider Control");
-        sPitch.name = "Map Pitch";
-        
-        var wpNulls = {};
-        ${waypointLayers}
-        
-        var pinNulls = {};
-        ${pinLayers}
-
-        try {
-            ${keyframes}
-        } catch(e) {
-            alert("Error setting keyframes on line " + e.line.toString() + ": " + e.toString());
-        }
-
-        app.endUndoGroup();
-        alert("Map Data Imported!");
-    })();`;
-
-    const blob = new Blob([script], {type: 'text/javascript'});
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "import_map_ae.jsx"; a.click();
+  const generatePNGSequence = async () => {
+    setIsRendering(true);
+    try {
+      setStatus('Capturing frames...');
+      const fps = settings.fps || 30;
+      const frames = await collectFrames(fps);
+      setStatus('Zipping...');
+      const zip = new JSZip(), folder = zip.folder('frames');
+      frames.forEach((f, i) => folder.file(`f${i.toString().padStart(5, '0')}.png`, f));
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      Object.assign(document.createElement('a'), { href: url, download: `frames_${Date.now()}.zip` }).click();
+      setStatus('Done! 🎉'); setTimeout(() => setStatus('Ready.'), 3000);
+    } catch (e) { console.error(e); alert(`PNG export failed: ${e?.message}`); }
+    finally { setIsRendering(false); }
   };
 
+  /* ── Render ── */
   return (
     <div className="app-container">
       {isRendering && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100vw',
-          height: '100vh',
-          background: 'rgba(0, 0, 0, 0.75)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <div style={{
-              background: '#222',
-              color: 'white',
-              padding: '25px 50px',
-              borderRadius: '15px',
-              textAlign: 'center',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
-          }}>
-              <h2 style={{margin: 0, marginBottom: '15px'}}>Rendering...</h2>
-              <div style={{fontSize: '1.8em', fontWeight: 'bold', color: '#10b981'}}>{status.split(':')[1]}</div>
+        <div className="render-overlay">
+          <div>
+            <div className="render-label">RENDERING</div>
+            <div className="render-pct">{status.match(/\d+%/)?.[0] || status}</div>
           </div>
         </div>
       )}
-      <div className="sidebar">
-        <h2 style={{ margin: '0 0 10px 0' }}>Map Animator PRO (React)</h2>
-        <div className="flex-row">
-          <button onClick={handleSave} style={{background: '#4b5563'}}>Save Project</button>
-          <button onClick={() => importInputRef.current?.click()} style={{background: '#4b5563'}}>Import Project</button>
-          <input type="file" accept=".json" style={{display: 'none'}} ref={importInputRef} onChange={handleLoad} />
-        </div>
-        
-        <CollapsibleSection title="Canvas Settings" id="canvasSettings" isCollapsed={collapsed['canvasSettings']} onToggle={toggleCollapsed}>
-          <label>Output Resolution</label>
-          <select value={settings.resolution} onChange={e => setSettings({...settings, resolution: e.target.value})}>
-              <option value="1920x1080">Full HD (16:9)</option>
-              <option value="1080x1920">Vertical (9:16)</option>
-          </select>
 
-          {/* ... Resto dos controles mapeados para o state 'settings' ... */}
-          <label>Map Theme</label>
-          <select value={settings.mapStyle} onChange={e => setSettings({...settings, mapStyle: e.target.value})}>
-              <option value="https://tiles.openfreemap.org/styles/bright">Bright</option>
-              <option value="https://tiles.openfreemap.org/styles/liberty">Liberty</option>
-              <option value="https://tiles.openfreemap.org/styles/positron">Positron</option>
-              <option value="https://tiles.openfreemap.org/styles/dark">Dark Matter</option>
-          </select>
-        </CollapsibleSection>
-
-        <CollapsibleSection title="Path Tools" id="pathTools" isCollapsed={collapsed['pathTools']} onToggle={toggleCollapsed}>
-          <div className="flex-row">
-              <button onClick={() => setIsDrawing(!isDrawing)} style={{ background: isDrawing ? '#10b981' : '#4b5563' }}>
-                  {isDrawing ? 'Stop Drawing' : 'Draw Mode'}
-              </button>
-              <button onClick={() => { customPathCoords.current = []; syncPathLayer(); }} style={{ background: '#991b1b' }}>Clear</button>
-          </div>
-
-          <label style={{marginTop:'10px'}}>Line Style</label>
-          <div className="flex-row">
-              <input type="color" value={settings.pathColor} onChange={e => setSettings({...settings, pathColor: e.target.value})} style={{height: '38px', width:'40px', padding:'2px'}} />
-              <input type="number" min="1" max="20" value={settings.pathWidth} onChange={e => setSettings({...settings, pathWidth: e.target.value})} style={{width:'50px'}} title="Width" />
-              <select value={settings.pathStyle} onChange={e => setSettings({...settings, pathStyle: e.target.value})} style={{flex:1}}>
-                  <option value="solid">Solid</option>
-                  <option value="dashed">Dashed</option>
-                  <option value="dotted">Dotted</option>
-              </select>
-          </div>
-
-          <label style={{marginTop:'10px'}}>Line Animation (Delay / Duration)</label>
-          <div className="flex-row">
-              <input type="number" placeholder="Start (s)" value={settings.lineAnimDelay} onChange={e => setSettings({...settings, lineAnimDelay: parseFloat(e.target.value)})} />
-              <input type="number" placeholder="Dur (s)" value={settings.lineAnimDuration} onChange={e => setSettings({...settings, lineAnimDuration: parseFloat(e.target.value)})} />
-          </div>
-          <select value={settings.lineEasing} onChange={e => setSettings({...settings, lineEasing: e.target.value})} style={{marginBottom:'5px'}}>
-              {Object.keys(EASINGS).map(name => <option key={name} value={name}>{name}</option>)}
-          </select>
-        </CollapsibleSection>
-
-        <CollapsibleSection title="Animation Settings" id="animationSettings" isCollapsed={collapsed['animationSettings']} onToggle={toggleCollapsed}>
-          <div className="flex-row">
-              <div style={{flex:1}}><label>Secs/Leg</label><input type="number" value={settings.duration} onChange={e => setSettings({...settings, duration: parseFloat(e.target.value)})} /></div>
-              <div style={{flex:1}}><label>FPS</label><input type="number" value={settings.fps} onChange={e => setSettings({...settings, fps: parseInt(e.target.value)})} /></div>
-          </div>
-          <label>Easing</label>
-          <select value={settings.easing} onChange={e => setSettings({...settings, easing: e.target.value})}>
-              {Object.keys(EASINGS).map(name => <option key={name} value={name}>{name}</option>)}
-          </select>
-        </CollapsibleSection>
-
-        <CollapsibleSection title="Camera Path" id="cameraPath" isCollapsed={collapsed['cameraPath']} onToggle={toggleCollapsed}>
-          {waypoints.map((w, i) => {
-            const id = `waypoint_${w.id}`;
-            return (
-              <CollapsibleSection key={w.id} title={`Waypoint ${i + 1}`} id={id} isCollapsed={collapsed[id]} onToggle={toggleCollapsed}>
-                <div className="card" style={{border: 'none', padding: '10px 0 0 0', margin: 0}}>
-                    <div className="waypoint-controls">
-                        <button onClick={() => updateWaypoint(w.id)}>Update</button>
-                        <button onClick={() => exportPNG(w.id)}>PNG</button>
-                        <button className="btn-remove" onClick={() => setWaypoints(waypoints.filter(x => x.id !== w.id))}>×</button>
-                    </div>
-                </div>
-              </CollapsibleSection>
-            )
-          })}
-          <button onClick={addWaypoint}>+ Add Waypoint</button>
-        </CollapsibleSection>
-
-        <CollapsibleSection title="Draggable Pins" id="draggablePins" isCollapsed={collapsed['draggablePins']} onToggle={toggleCollapsed}>
-          {pins.map(p => {
-            const id = `pin_${p.id}`;
-            return (
-              <div key={p.id} className="card">
-                  <button className="btn-remove" onClick={() => removePin(p.id)}>×</button>
-                  <CollapsibleSection title={p.text || "Pin"} id={id} isCollapsed={collapsed[id]} onToggle={toggleCollapsed}>
-                    <input type="text" value={p.text} onChange={e => updatePin(p.id, 'text', e.target.value)} placeholder="Pin Label"/>
-                    <label>Scale: {p.scale}</label>
-                    <input type="range" min="0.5" max="3.0" step="0.1" value={p.scale} onChange={e => updatePin(p.id, 'scale', e.target.value)} />
-                    
-                    <label>Text Size: {p.textScale || 1.0}</label>
-                    <input type="range" min="0.5" max="3.0" step="0.1" value={p.textScale || 1.0} onChange={e => updatePin(p.id, 'textScale', e.target.value)} />
-
-                    <div className="flex-row">
-                        <div style={{flex:1}}><label>Text X</label><input type="number" value={p.textOffsetX || 0} onChange={e => updatePin(p.id, 'textOffsetX', e.target.value)} /></div>
-                        <div style={{flex:1}}><label>Text Y</label><input type="number" value={p.textOffsetY || 0} onChange={e => updatePin(p.id, 'textOffsetY', e.target.value)} /></div>
-                    </div>
-
-                    <div className="flex-row" style={{marginTop: '5px'}}>
-                        <select value={p.style} onChange={e => updatePin(p.id, 'style', e.target.value)} style={{flex:2}}>
-                            <option value="classic">Classic</option>
-                            <option value="bubble">Bubble</option>
-                            <option value="square">Square</option>
-                            <option value="flag">Flag</option>
-                            <option value="dot">Dot</option>
-                        </select>
-                        <input type="color" value={p.color} onChange={e => updatePin(p.id, 'color', e.target.value)} style={{flex:1, height:'32px', padding:'2px'}} />
-                    </div>
-                  </CollapsibleSection>
-              </div>
-            )
-          })}
-          <button style={{ background: '#F72210' }} onClick={addPin}>+ Add Pin</button>
-        </CollapsibleSection>
-
-        <button style={{ background: '#10b981', marginTop: '15px', padding: '12px' }} onClick={generateZip}>
-            RENDER SEQUENCE (ZIP)
-        </button>
-        {aeData && aeData.length > 0 && (
-            <button style={{ background: '#8b5cf6', marginTop: '5px', padding: '12px' }} onClick={downloadAEScript}>
-                DOWNLOAD AE SCRIPT
-            </button>
-        )}
-        <div className="status-text">{status}</div>
+      <div className="side-toggle" onClick={() => setPanelVisible(!panelVisible)} title={panelVisible ? 'Hide' : 'Show'}>
+        {panelVisible ? '◀' : '▶'}
       </div>
 
+      <FloatingPanel
+        title="Main Scene : default → Map"
+        visible={panelVisible}
+        onClose={() => setPanelVisible(false)}
+        defaultPos={{ x: 20, y: 80 }}
+        footerChildren={
+          <>
+            <div className="prop-row" style={{ gap: '4px' }}>
+              <button className="act-btn secondary" onClick={toggleStudio}>Studio</button>
+              <button className="act-btn secondary" onClick={syncToTimeline}>Capture</button>
+              <button
+                className={`act-btn ${liveSync ? 'live-on' : 'live-off'}`}
+                onClick={() => setLiveSync(!liveSync)}
+                title="Auto-capture map position on every move"
+              >
+                {liveSync ? '⬤ LIVE' : '○ LIVE'}
+              </button>
+            </div>
+
+            <div className="prop-row" style={{ marginTop: '4px' }}>
+              <label>Export Len (s)</label>
+              <input type="number" min="1" step="0.5" value={settings.exportDuration} onChange={e => setSettings(s => ({ ...s, exportDuration: parseFloat(e.target.value) || 3 }))} style={{ width: '60px' }} />
+            </div>
+
+            <div className="prop-row" style={{ gap: '4px', marginTop: '4px' }}>
+              <button className="act-btn export-mp4" onClick={generateMP4} disabled={!ffmpegLoaded || isRendering}>
+                ▶ MP4
+              </button>
+              <button className="act-btn export-png" onClick={generatePNGSequence} disabled={isRendering}>
+                ⬛ PNG SEQ
+              </button>
+            </div>
+            {status !== 'Ready.' && !isRendering && <div className="status-text">{status}</div>}
+          </>
+        }
+      >
+        <Section title="Workspace" id="ws" collapsed={sec.ws} onToggle={toggleSec}>
+          <div className="prop-row"><label>Format</label>
+            <select value={settings.resolution} onChange={e => setSettings(s => ({ ...s, resolution: e.target.value }))}>
+              <option value="1920x1080">1920×1080</option>
+              <option value="1080x1920">1080×1920</option>
+              <option value="1080x1080">1080×1080</option>
+            </select>
+          </div>
+          <div className="prop-row"><label>Style</label>
+            <select value={settings.mapStyle} onChange={e => setSettings(s => ({ ...s, mapStyle: e.target.value }))}>
+              <option value="https://tiles.openfreemap.org/styles/bright">Bright</option>
+              <option value="https://tiles.openfreemap.org/styles/dark">Dark</option>
+              <option value="https://tiles.openfreemap.org/styles/positron">Positron</option>
+              <option value="https://tiles.openfreemap.org/styles/liberty">Liberty</option>
+            </select>
+          </div>
+          <div className="prop-row"><label>FPS</label>
+            <input type="number" min="10" max="60" value={settings.fps} onChange={e => setSettings(s => ({ ...s, fps: parseInt(e.target.value) }))} />
+          </div>
+        </Section>
+
+        <Section title="Drawing" id="draw" collapsed={sec.draw} onToggle={toggleSec}>
+          <div className="prop-row"><label>Color</label>
+            <input type="color" value={settings.pathColor} onChange={e => { setSettings(s => ({ ...s, pathColor: e.target.value })); syncPathLayer(); }} />
+          </div>
+          <div className="prop-row"><label>Width</label>
+            <input type="number" min="1" max="20" value={settings.pathWidth} onChange={e => setSettings(s => ({ ...s, pathWidth: e.target.value }))} />
+          </div>
+          <div className="prop-row" style={{ gap: '4px' }}>
+            <button className={`panel-btn ${isDrawing ? 'active' : ''}`} onClick={() => setIsDrawing(!isDrawing)}>
+              {isDrawing ? 'LOCK PATH' : 'DRAW PATH'}
+            </button>
+            <button className="panel-btn" onClick={() => { customPathCoords.current = []; syncPathLayer(); }}>CLEAR</button>
+          </div>
+        </Section>
+
+        <Section title="Pins" id="pins" collapsed={sec.pins} onToggle={toggleSec}>
+          {pins.map(p => (
+            <div key={p.id} className="pin-card" style={{ paddingBottom: '4px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              <div className="pin-row">
+                <input type="color" value={p.color} onChange={e => updatePin(p.id, 'color', e.target.value)} className="color-dot" />
+                <input type="text" value={p.text} onChange={e => updatePin(p.id, 'text', e.target.value)} className="pin-text-input" />
+                <button className="pin-del" onClick={() => setActivePinId(p.id)} style={{ color: '#bbb' }}>⚙️</button>
+                <button className="pin-del" onClick={() => removePin(p.id)}>×</button>
+              </div>
+            </div>
+          ))}
+          <div className="prop-row">
+            <button className="panel-btn" onClick={addPin}>+ ADD PIN</button>
+          </div>
+        </Section>
+      </FloatingPanel>
+
+      {/* Pin Properties Floating Window */}
+      {activePinId && pins.find(p => p.id === activePinId) && (() => {
+        const p = pins.find(x => x.id === activePinId);
+        return (
+          <FloatingPanel
+            title={`Properties: ${p.text || 'Pin'}`}
+            visible={true}
+            onClose={() => setActivePinId(null)}
+            defaultPos={{ x: window.innerWidth - 300, y: 80 }}
+          >
+            <div style={{ padding: '8px 0' }}>
+              <div className="prop-row">
+                <label>Style</label>
+                <select value={p.style} onChange={e => updatePin(p.id, 'style', e.target.value)}>
+                  <option value="bubble">Bubble</option>
+                  <option value="classic">Pin</option>
+                  <option value="square">Square</option>
+                  <option value="flag">Flag</option>
+                  <option value="dot">Dot</option>
+                </select>
+              </div>
+              <div className="prop-row">
+                <label>Pin Scale</label>
+                <input type="number" min="0.5" max="3" step="0.1" value={p.scale} onChange={e => updatePin(p.id, 'scale', e.target.value)} />
+              </div>
+              <div className="prop-hint" style={{ marginTop: '8px', color: '#888' }}>Text Settings</div>
+              <div className="prop-row">
+                <label>Text Color</label>
+                <input type="color" value={p.textColor || '#ffffff'} onChange={e => updatePin(p.id, 'textColor', e.target.value)} />
+              </div>
+              <div className="prop-row">
+                <label>Font</label>
+                <select value={p.fontFamily || 'Inter, sans-serif'} onChange={e => updatePin(p.id, 'fontFamily', e.target.value)}>
+                  <option value="Inter, sans-serif">Inter</option>
+                  <option value="Arial, sans-serif">Arial</option>
+                  <option value="'Courier New', monospace">Courier New</option>
+                  <option value="'Times New Roman', serif">Times New Roman</option>
+                  <option value="'Comic Sans MS', cursive">Comic Sans</option>
+                  <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                  <option value="Impact, sans-serif">Impact</option>
+                </select>
+              </div>
+              <div className="prop-row">
+                <label>Text Scale</label>
+                <input type="number" min="0.5" max="5" step="0.1" value={p.textScale || 1} onChange={e => updatePin(p.id, 'textScale', e.target.value)} />
+              </div>
+              <div className="prop-row">
+                <label>Offset X/Y</label>
+                <input type="number" step="1" value={p.textOffsetX || 0} onChange={e => updatePin(p.id, 'textOffsetX', e.target.value)} style={{ width: '40%' }} />
+                <input type="number" step="1" value={p.textOffsetY || 0} onChange={e => updatePin(p.id, 'textOffsetY', e.target.value)} style={{ width: '40%' }} />
+              </div>
+            </div>
+          </FloatingPanel>
+        );
+      })()}
+
       <div className="map-viewport">
-        <div id="map-container" className={`map-container ${isDrawing ? 'cursor-draw' : ''}`} ref={mapWrapper}>
-            <div ref={mapContainer} className="map-element" />
+        <div ref={mapWrapper} className="map-container">
+          <div ref={mapContainer} className="map-element" />
         </div>
       </div>
     </div>

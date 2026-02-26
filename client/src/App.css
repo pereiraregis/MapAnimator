@@ -1,46 +1,449 @@
-body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; background: #0f0f0f; color: #ececec; overflow: hidden; }
-.app-container { display: flex; height: 100vh; width: 100vw; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-.sidebar { width: 380px; height: 100%; padding: 20px; box-sizing: border-box; border-right: 1px solid #333; background: rgba(26, 26, 26, 0.98); overflow-y: auto; display: flex; flex-direction: column; z-index: 10; box-shadow: 10px 0 30px rgba(0,0,0,0.5); position: relative; }
-.map-viewport { flex-grow: 1; position: relative; display: flex; align-items: center; justify-content: center; background: #000; overflow: hidden; }
-.map-container { position: relative; transform-origin: center center; background: #000; flex-shrink: 0; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
-.map-element { width: 100%; height: 100%; }
-.maplibregl-ctrl-attrib, .maplibregl-ctrl-logo { display: none !important; }
+:root {
+  --panel-bg: #252525;
+  --panel-header-bg: #1e1e1e;
+  --panel-border: #3a3a3a;
+  --panel-hover: #2e2e2e;
+  --value-bg: #1a3540;
+  --accent-teal: #4fc3d4;
+  --text-main: #e0e0e0;
+  --text-dim: #888;
+  --font: 'Inter', system-ui, sans-serif;
+}
 
-.section-title { font-size: 11px; font-weight: 800; color: #3b82f6; text-transform: uppercase; margin: 20px 0 10px 0; border-bottom: 1px solid #333; padding-bottom: 5px; }
-.card { background: #252525; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #3b82f6; position: relative; }
-label { display: block; font-size: 9px; color: #888; margin-bottom: 2px; text-transform: uppercase; font-weight: 700; }
-input, select, button { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #111; color: white; margin-bottom: 5px; font-size: 12px; box-sizing: border-box; }
-input[type="range"] { padding: 0; height: 4px; background: #444; cursor: pointer; }
-.flex-row { display: flex; gap: 5px; align-items: flex-end; }
-button { background: #3b82f6; border: none; font-weight: 600; cursor: pointer; transition: 0.2s; }
-button:hover { opacity: 0.9; }
-.btn-remove { background: #991b1b; width: 22px; height: 22px; position: absolute; right: 8px; top: 8px; border-radius: 50%; padding: 0; line-height: 20px; z-index: 10; display: flex; align-items: center; justify-content: center; }
-.waypoint-controls { display: grid; grid-template-columns: 1fr 1fr 22px; gap: 5px; margin-top: 5px; }
-.status-text { color: #10b981; font-size: 11px; margin-top: 10px; }
+* {
+  box-sizing: border-box;
+}
 
-/* Custom Cursor for Draw Mode */
-.cursor-draw .maplibregl-canvas-container { cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2l4 4-10 10H7v-5L18 2z"/><path d="M3 22h18"/></svg>') 0 24, crosshair !important; }
+body,
+html {
+  margin: 0;
+  padding: 0;
+  background: #000;
+  font-family: var(--font);
+  color: var(--text-main);
+  overflow: hidden;
+}
 
-/* Pin Styles */
-.pin-container { position: relative; display: flex; align-items: center; justify-content: center; will-change: transform; transform-style: preserve-3d; backface-visibility: hidden; }
-.pin-scaler { display: flex; align-items: center; justify-content: center; position: relative; transform-origin: center bottom; transition: transform 0.05s linear; }
-.pin-svg { display: block; width: 100%; height: 100%; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.5)); pointer-events: none; }
-.pin-label { position: absolute; color: white; font-weight: 800; white-space: nowrap; text-shadow: 0px 1px 2px rgba(0,0,0,0.8); pointer-events: none; z-index: 2; top: 50%; left: 50%; line-height: 1; }
+.app-container {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  background: #000;
+}
 
-/* Collapsible Section Styles */
-.collapsible-header {
-  cursor: pointer;
+/* Map */
+.map-viewport {
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
 }
-.collapsible-header span {
+
+.map-container {
+  position: relative;
+  background: #000;
+}
+
+.map-element {
+  width: 100%;
+  height: 100%;
+}
+
+.maplibregl-ctrl-attrib,
+.maplibregl-ctrl-logo {
+  display: none !important;
+}
+
+/* Side toggle button */
+.side-toggle {
+  position: fixed;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2000;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+  padding: 10px 5px;
+  cursor: pointer;
+  font-size: 9px;
+  color: var(--text-dim);
+  writing-mode: vertical-lr;
+  letter-spacing: 2px;
+  transition: color 0.2s;
+}
+
+.side-toggle:hover {
+  color: var(--accent-teal);
+}
+
+/* ── Floating Panel (matches Theatre.js style) ─────────────────────── */
+.floating-panel {
+  position: fixed;
+  z-index: 1500;
+  min-width: 280px;
+  max-width: 320px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 0;
+  /* No rounding — matches Theatre.js */
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-size: 11px;
+}
+
+.panel-header {
+  background: var(--panel-header-bg);
+  border-bottom: 1px solid var(--panel-border);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: grab;
+  user-select: none;
+}
+
+.panel-header:active {
+  cursor: grabbing;
+}
+
+.panel-title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--accent-teal);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.panel-title {
   font-size: 10px;
-  transition: transform 0.2s;
+  font-weight: 500;
+  color: #aaa;
+  letter-spacing: 0.02em;
 }
+
+.panel-btn {
+  all: unset;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 0 4px;
+  line-height: 1;
+  border-radius: 2px;
+}
+
+.panel-btn:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.panel-body {
+  padding: 6px 0;
+  max-height: 65vh;
+  overflow-y: auto;
+}
+
+.panel-body::-webkit-scrollbar {
+  width: 3px;
+}
+
+.panel-body::-webkit-scrollbar-thumb {
+  background: #444;
+}
+
+.panel-footer {
+  background: var(--panel-header-bg);
+  border-top: 1px solid var(--panel-border);
+  padding: 10px;
+}
+
+/* ── Section Groups ─────────────────────────────────────────────────── */
+.section-group {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  color: #bbb;
+}
+
+.collapsible-header:hover {
+  background: var(--panel-hover);
+  color: #fff;
+}
+
+.chevron {
+  font-size: 7px;
+  color: var(--accent-teal);
+}
+
 .collapsible-content {
-  padding-left: 18px;
-  border-left: 1px solid #333;
-  margin-left: 5px;
+  padding: 4px 0 6px;
+}
+
+/* ── Property Rows (like Theatre.js value fields) ───────────────────── */
+.prop-row {
+  display: flex;
+  align-items: center;
+  padding: 2px 10px;
+  min-height: 24px;
+  gap: 6px;
+}
+
+.prop-row:hover {
+  background: var(--panel-hover);
+}
+
+.prop-row label {
+  font-size: 10px;
+  color: var(--accent-teal);
+  min-width: 60px;
+  flex-shrink: 0;
+  padding-left: 14px;
+  /* indent like Theatre */
+}
+
+.prop-row input[type="number"],
+.prop-row select {
+  flex: 1;
+  background: var(--value-bg);
+  border: none;
+  color: var(--accent-teal);
+  font-family: monospace;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 2px;
+  outline: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.prop-row select option {
+  background: #1e1e1e;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+.act-btn {
+  all: unset;
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 5px 8px;
+  border: 1px solid var(--panel-border);
+  background: #2a2a2a;
+  color: #ccc;
+  text-align: center;
+  flex: 1;
+  transition: all 0.15s;
+}
+
+.act-btn:hover {
+  background: #333;
+  color: #fff;
+}
+
+.act-btn.secondary {
+  color: var(--accent-teal);
+  border-color: var(--accent-teal);
+}
+
+.act-btn.secondary:hover {
+  background: var(--accent-teal);
+  color: #000;
+}
+
+.act-btn.live-off {
+  color: #666;
+  border-color: #444;
+  font-family: monospace;
+  font-size: 9px;
+}
+
+.act-btn.live-on {
+  color: #ff5555;
+  border-color: #ff5555;
+  font-family: monospace;
+  font-size: 9px;
+}
+
+.act-btn.export-mp4 {
+  color: #ec4899;
+  border-color: #ec4899;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.act-btn.export-mp4:hover {
+  background: #ec4899;
+  color: #000;
+}
+
+.act-btn.export-png {
+  color: #a78bfa;
+  border-color: #a78bfa;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.act-btn.export-png:hover {
+  background: #a78bfa;
+  color: #000;
+}
+
+.act-btn:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* Pin Cards */
+.pin-card {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 4px 0;
+}
+
+.pin-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  min-height: 22px;
+}
+
+.pin-row:hover {
+  background: var(--panel-hover);
+}
+
+.pin-row label {
+  font-size: 9px;
+  color: var(--accent-teal);
+  min-width: 60px;
+  padding-left: 14px;
+}
+
+.pin-row input[type="number"],
+.pin-row select {
+  flex: 1;
+  background: var(--value-bg);
+  border: none;
+  color: var(--accent-teal);
+  font-family: monospace;
+  font-size: 11px;
+  padding: 2px 4px;
+  outline: none;
+}
+
+.color-dot {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 2px;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.pin-text-input {
+  all: unset;
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-main);
+  background: transparent;
+}
+
+.pin-del {
+  all: unset;
+  cursor: pointer;
+  color: #666;
+  font-size: 14px;
+  padding: 0 2px;
+}
+
+.pin-del:hover {
+  color: #ff5555;
+}
+
+.prop-hint {
+  font-size: 9px;
+  color: var(--text-dim);
+  padding: 2px 10px 2px 24px;
+  font-family: monospace;
+}
+
+.panel-btn {
+  all: unset;
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border: 1px solid var(--panel-border);
+  background: #2a2a2a;
+  color: #aaa;
+  flex: 1;
+  text-align: center;
+}
+
+.panel-btn:hover {
+  background: #333;
+  color: #fff;
+}
+
+.panel-btn.active {
+  border-color: var(--accent-teal);
+  color: var(--accent-teal);
+}
+
+.status-text {
+  font-size: 10px;
+  color: var(--accent-teal);
+  text-align: center;
+  font-family: monospace;
+  margin-top: 4px;
+}
+
+/* ── Render Overlay ──────────────────────────────────────────────────── */
+.render-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.render-label {
+  font-size: 10px;
+  letter-spacing: 4px;
+  color: var(--accent-teal);
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.render-pct {
+  font-size: 56px;
+  font-weight: 900;
+  text-align: center;
+  color: #fff;
 }
