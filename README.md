@@ -1,6 +1,6 @@
 # Map Animator V2
 
-A premium, web-based tool for creating, animating, and exporting high-quality cinematic map sequences. Built with React and designed for seamless keyframe-based animation and high-performance WebGL map rendering.
+A web-based tool for creating, animating, and exporting high-quality cinematic map sequences. Built with React and designed for seamless keyframe-based animation and high-performance WebGL map rendering.
 
 ## Features
 
