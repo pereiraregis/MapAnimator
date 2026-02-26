@@ -52,12 +52,13 @@ npm run deploy
 ## Creating a Sequence
 1. Toggle the **Studio** button in the sidebar to open the Theatre.js timeline timeline.
 2. Select the "Map" object in the left panel to expose coordinate tracks.
-3. Move the map to your desired starting position.
-4. Click the small diamond icon next to coordinates in Theatre.js to create a start keyframe.
-5. Move the timeline playhead to 5 seconds.
-6. Move the map to your ending position. Animate!
-7. Ensure your **Export Len (s)** in the floating sidebar matches your timeline limit.
-8. Hit **MP4** or **PNG SEQ** to capture locally.
+3. Right click Props then Sequence All.
+4. Move the map to your desired starting position.
+5. Click the small diamond icon next to coordinates in Theatre.js or Capture in the left side panel to create a start keyframe.
+6. Move the timeline playhead to 5 seconds.
+7. Move the map to your ending position. Animate!
+8. Ensure your **Export Len (s)** in the floating sidebar matches your timeline limit.
+9. Hit **MP4** or **PNG SEQ** to capture locally.
 
 ## License
 
