@@ -1,6 +1,28 @@
 # Map Animator V2
 
-**Current release: v0.3.0.** [Open the editor](https://pereiraregis.github.io/MapAnimator/) · [Changelog](CHANGELOG.md)
+**Current release: v0.4.0.** [Open the editor](https://pereiraregis.github.io/MapAnimator/) · [Changelog](CHANGELOG.md)
+
+### Docked workspace and shortcuts
+
+The editor now uses fixed workspace regions rather than draggable windows: controls/export on the left, map in the center, elements/pin properties/help on the right, and timeline below. **Controles**, **Mapa** and **Elementos** navigate a single-pane layout on narrow screens. On larger screens, the sidebars can be collapsed to enlarge the preview. Search is in the map toolbar; canvas fitting updates as the available area changes.
+
+| Shortcut | Action |
+| --- | --- |
+| Space | Play/pause |
+| K | Capture a view at the current time |
+| Left/Right | Previous/next frame |
+| Shift + Left/Right | Back/forward ten frames |
+| Home/End | Beginning/end |
+| `[` / `]` | Previous/next view |
+| D / V | Draw route / select |
+| P / F / N | Add pin / frame selected feature / north |
+| Ctrl/Cmd + S / O | Save/open project |
+| T | Show/hide timeline, preserving playback state |
+| Backslash | Collapse/restore sidebars |
+| 1 / 2 / 3 | Controls / map / elements |
+| ? / Escape | Shortcut help / pause and exit drawing/help |
+
+Typing and number/select/range editing do not trigger unmodified shortcuts. Save/open remain available while editing. Shortcuts are suspended during export. Press **?** for the docked shortcut reference. The previous floating Theatre Studio entry point has been removed; saved Theatre tracks remain available to the legacy export mode.
 
 ### Camera timeline and map styling
 
@@ -16,7 +38,7 @@ The existing React + MapLibre + Theatre.js editor now includes:
 
 - A geographic feature browser: import WGS84 GeoJSON points, lines, polygons and multi geometries; filter, select, frame, hide and delete elements.
 - Per-feature color, opacity, outline width and point radius, preserved when switching basemaps.
-- Labels from selected features and conversion of a LineString into the animated route (`pathProgress` in Theatre Studio).
+- Labels from selected features and conversion of a LineString into the animated route (the **Rota** value on each camera view).
 - Numeric longitude, latitude, zoom, pitch and bearing controls. Use **Capture** to write the current view to Theatre.
 - **Salvar projeto** downloads a versioned JSON file containing map settings, camera, pins, route, feature styles and Theatre timeline, and stores a browser-local copy. **Abrir arquivo** or **Reabrir local** replaces the scene and reloads the editor. Save the current scene first.
 - Visible provider attribution in the preview and composited into exported frames. Geocoding runs on Enter with a session cache and request queue.
@@ -27,7 +49,7 @@ See [the reference research and implementation roadmap](docs/GEOLAYERS_RESEARCH.
 
 1. Click **Exemplo** in the geographic panel to load sample point, line and polygon features near São Paulo.
 2. Select an element and edit its style, create a label, or frame it on the map.
-3. Select the example LineString and click **Animar rota**. Open **Studio** to animate `pathProgress` from 0 to 1.
+3. Select the example LineString and click **Animar rota**. Set **Rota** to 0 on the first captured view and 1 on the final view.
 4. Save the project and reopen it to continue editing the same timeline.
 
 GeoJSON exports preserve source properties. Save a MapAnimator project to retain styles and visibility. Files are validated before import (10 MB and 5000 features per GeoJSON). GeometryCollection and projected coordinate systems are not supported. Polygon labels use bounding-box centers; drag the label if necessary. Framing across the antimeridian needs further work.
@@ -40,10 +62,10 @@ A premium, web-based tool for creating, animating, and exporting high-quality ci
 
 - **Keyframe Timelines**: Fully integrated with Theatre.js for professional-grade animation sequencing. Animate camera position, zooming, pitching, and bearing effortlessly.
 - **Native WebGL Pins**: Add draggable, customizable pins (icons, colors, labels, shadows, and scalable texts) that hook directly into the MapLibre GL JS symbol layers.
-- **Floating Properties Panels**: Clean, collapsible "Studio" UI that stays out of your way while you work.
+- **Docked Workspace**: Controls, map, element/pin inspector, help and timeline occupy fixed regions with independent scrolling.
 - **Draw Routes**: Instantly draw animated route paths using highly accurate GeoJSON rendering.
 - **High-Performance Exporting**: Run complex video exports entirely in your browser using WebAssembly (`ffmpeg.wasm`). Export MP4 videos or sequential PNG ZIP packages.
-- **Live Sync**: Sync your live map movements and pan/zoom gestures directly into timeline keyframes on the fly.
+- **Camera Capture**: Press K to capture the map at the current playhead time and Space to preview the animation.
 - **Multiple Styles**: Select between OpenFreeMap styles (Dark, Bright, Positron, Liberty). Terrain integration is planned.
 - **Search & Geocoding**: Search for anywhere in the world and instantly jump your camera to that location.
 
@@ -86,14 +108,12 @@ npm run deploy
 ```
 
 ## Creating a Sequence
-1. Toggle the **Studio** button in the sidebar to open the Theatre.js timeline timeline.
-2. Select the "Map" object in the left panel to expose coordinate tracks.
-3. Move the map to your desired starting position.
-4. Click the small diamond icon next to coordinates in Theatre.js to create a start keyframe.
-5. Move the timeline playhead to 5 seconds.
-6. Move the map to your ending position. Animate!
-7. Ensure your **Export Len (s)** in the floating sidebar matches your timeline limit.
-8. Hit **MP4** or **PNG SEQ** to capture locally.
+1. Set the timeline duration and move to 0 seconds with Home.
+2. Move the map to the starting view, focus the map and press K.
+3. Choose another time, move the map to the next view and press K again.
+4. Choose an easing mode on the captured view and use Space to play/pause.
+5. Use arrow keys to step by frames and brackets to jump between views.
+6. Export **MP4** or **PNG SEQ** from the fixed left panel. Use Ctrl/Cmd+S to save the editable project.
 
 ## License
 
