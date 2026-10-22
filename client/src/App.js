@@ -10,25 +10,21 @@ import studio from '@theatre/studio';
 import JSZip from 'jszip';
 import FeatureBrowser from './FeatureBrowser';
 import CameraTimeline from './CameraTimeline';
+import ShortcutHelp from './ShortcutHelp';
+import { shortcutAction } from './shortcuts';
 import { sampleCamera } from './geo/animation';
 import { BASEMAP_DEFAULTS, isBasemapLayer, applyBasemap } from './geo/basemap';
 import { featureBounds } from './geo/features';
 import { syncFeatureLayers } from './geo/layers';
 import { geocode } from './geo/geocoding';
 import { STORAGE_KEY, REOPEN_KEY, readReopenedScene, validateScene, downloadJSON } from './geo/scene';
-import './App.css';
+import './workspace.css';
 
 const reopenedScene = readReopenedScene();
 studio.initialize({ usePersistentStorage: !reopenedScene });
 studio.ui.hide();
 const project = getProject('MapAnimator v2', reopenedScene ? { state: reopenedScene.theatre } : undefined);
 const sheet = project.sheet('Main Scene');
-
-let studioHidden = true;
-const toggleStudio = () => {
-  if (studioHidden) { studio.ui.restore(); studioHidden = false; }
-  else { studio.ui.hide(); studioHidden = true; }
-};
 
 const SVGS = {
   'classic': `<svg viewBox="0 0 24 24" fill="%C" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" stroke="white" stroke-width="1"/></svg>`,
@@ -85,64 +81,42 @@ const captureMapFrame = (mapInstance, [W, H]) =>
     mapInstance.triggerRepaint();
   });
 
-// Draggable Floating Panel
-function FloatingPanel({ title, visible, onClose, defaultPos, children, footerChildren }) {
-  const [pos, setPos] = useState(defaultPos || { x: 20, y: 80 });
-  const [collapsed, setPanelCollapsed] = useState(false);
-  const dragRef = useRef(null);
-
-  const onMouseDown = (e) => {
-    if (e.target.closest('.no-drag')) return;
-    dragRef.current = { mx: e.clientX, my: e.clientY, px: pos.x, py: pos.y };
-  };
-  useEffect(() => {
-    const move = e => {
-      if (!dragRef.current) return;
-      setPos({ x: Math.max(0, dragRef.current.px + e.clientX - dragRef.current.mx), y: Math.max(0, dragRef.current.py + e.clientY - dragRef.current.my) });
-    };
-    const up = () => { dragRef.current = null; };
-    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
-    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
-  }, []);
-
+// Panels belong to the workspace grid; their content scrolls independently.
+function DockPanel({ title, visible = true, className = '', children, footerChildren }) {
   if (!visible) return null;
-  return (
-    <div className="floating-panel" style={{ left: pos.x, top: pos.y }}>
-      <div className="panel-header" onMouseDown={onMouseDown}>
-        <div className="panel-title-row">
-          <span className="panel-dot" />
-          <span className="panel-title">{title}</span>
-        </div>
-        <div className="no-drag panel-controls">
-          <button className="panel-ctrl-btn" onClick={() => setPanelCollapsed(!collapsed)}>{collapsed ? '▼' : '▲'}</button>
-          <button className="panel-ctrl-btn" onClick={onClose}>×</button>
-        </div>
-      </div>
-      {!collapsed && (
-        <>
-          <div className="panel-body">{children}</div>
-          {footerChildren && <div className="panel-footer">{footerChildren}</div>}
-        </>
-      )}
-    </div>
-  );
+  return <section className={`dock-panel ${className}`} aria-label={title}>
+    <header className="panel-header"><span className="panel-dot" /><h2>{title}</h2></header>
+    <div className="panel-body">{children}</div>
+    {footerChildren && <footer className="panel-footer">{footerChildren}</footer>}
+  </section>;
 }
 
 const Section = ({ title, id, collapsed, onToggle, children }) => (
   <div className="section-group">
-    <div className="section-header" onClick={() => onToggle(id)}>
+    <button className="section-header" type="button" aria-expanded={!collapsed} onClick={() => onToggle(id)}>
       <span className="chevron">{collapsed ? '▶' : '▼'}</span>{title}
-    </div>
+    </button>
     {!collapsed && <div className="section-body">{children}</div>}
   </div>
 );
 
 function App() {
   const mapContainer = useRef(null), map = useRef(null), mapWrapper = useRef(null);
+  const searchContainer = useRef(null);
   const [pins, setPins] = useState(reopenedScene?.pins || []);
   const [features, setFeatures] = useState(reopenedScene?.features || []);
   const [selectedFeature, setSelectedFeature] = useState(null);
   const [browserVisible, setBrowserVisible] = useState(true);
+  const [rightTab, setRightTab] = useState('features');
+  const [mobilePane, setMobilePane] = useState('map');
+  const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 900px)').matches);
+  const timelineRef = useRef(null), shortcutsRef = useRef({});
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 900px)');
+    const change = () => setCompact(media.matches);
+    media.addEventListener('change', change);
+    return () => media.removeEventListener('change', change);
+  }, []);
   const [projectName, setProjectName] = useState(reopenedScene?.name || 'Main Scene');
   const [cameraView, setCameraView] = useState(reopenedScene?.camera || { lng: -46.633, lat: -23.550, zoom: 12, pitch: 0, bearing: 0 });
   const [waypoints, setWaypoints] = useState(reopenedScene?.waypoints || []);
@@ -171,7 +145,6 @@ function App() {
     pathEnd: 0,         // 0 = use full sequence length
   });
   const [activePinId, setActivePinId] = useState(null);
-  const [liveSync, setLiveSync] = useState(false); // live map→Theatre sync toggle
   const toggleSec = id => setSec(p => ({ ...p, [id]: !p[id] }));
 
   const customPathCoords = useRef(reopenedScene?.route || []), pinsRef = useRef(reopenedScene?.pins || []);
@@ -181,11 +154,6 @@ function App() {
   const ffmpegRef = useRef(new FFmpeg());
   const mapObj = useRef(null);
   const [ffmpegLoaded, setFfmpegLoaded] = useState(false);
-  const liveSyncRef = useRef(liveSync);
-  useEffect(() => { liveSyncRef.current = liveSync; }, [liveSync]);
-
-  // Debounce ref for live sync
-  const syncTimer = useRef(null);
 
   // Dragging state for pins
   const dragState = useRef({ id: null, active: false });
@@ -270,14 +238,17 @@ function App() {
     const [w, h] = settings.resolution.split('x').map(Number);
     mapWrapper.current.style.width = w + 'px'; mapWrapper.current.style.height = h + 'px';
     const vp = mapWrapper.current.parentElement;
-    const scale = Math.min((vp.clientWidth - 40) / w, (vp.clientHeight - 40) / h);
-    mapWrapper.current.style.transform = `scale(${scale})`;
+    if (vp.clientWidth < 1 || vp.clientHeight < 1) return;
+    const scale = Math.max(.01, Math.min((vp.clientWidth - 32) / w, (vp.clientHeight - 32) / h));
+    mapWrapper.current.style.transform = `translate(-50%, -50%) scale(${scale})`;
     requestAnimationFrame(() => map.current?.resize());
   }, [settings.resolution]);
 
   useEffect(() => {
+    const observer = new ResizeObserver(updateViewport);
+    if (mapWrapper.current?.parentElement) observer.observe(mapWrapper.current.parentElement);
     window.addEventListener('resize', updateViewport); updateViewport();
-    return () => window.removeEventListener('resize', updateViewport);
+    return () => { observer.disconnect(); window.removeEventListener('resize', updateViewport); };
   }, [updateViewport]);
 
   useEffect(() => {
@@ -321,7 +292,7 @@ function App() {
           } catch (err) { setStatus(err.message); return { features: [] }; }
         },
       }, { maplibregl, showResultsWhileTyping: false, minLength: 3, placeholder: 'Buscar lugar e pressionar Enter' });
-      map.current.addControl(geocoder, 'top-left');
+      searchContainer.current.appendChild(geocoder.onAdd(map.current));
       updateViewport();
 
     map.current.on('click', e => {
@@ -329,7 +300,7 @@ function App() {
       else {
         const layers = ['ma-points', 'ma-outlines', 'ma-polygons'].filter(id => map.current.getLayer(id));
         const hit = layers.length && map.current.queryRenderedFeatures(e.point, { layers })[0];
-        if (hit) setSelectedFeature(hit.properties._maId);
+        if (hit) { setSelectedFeature(hit.properties._maId); setRightTab('features'); setBrowserVisible(true); }
       }
     });
 
@@ -338,6 +309,7 @@ function App() {
       e.preventDefault();
       const feature = e.features[0];
       if (feature) {
+        setActivePinId(feature.properties.id); setRightTab('pin'); setBrowserVisible(true);
         dragState.current = { id: feature.properties.id, active: true };
         map.current.getCanvasContainer().style.cursor = 'grabbing';
       }
@@ -364,24 +336,9 @@ function App() {
       }
     });
 
-    // Live sync: when map moves, debounce-update Theatre.js props
     map.current.on('moveend', () => {
       const center = map.current.getCenter();
       setCameraView({ lng: center.wrap().lng, lat: center.lat, zoom: map.current.getZoom(), pitch: map.current.getPitch(), bearing: map.current.getBearing() });
-      if (!liveSyncRef.current || !mapObj.current || animationModeRef.current) return;
-      clearTimeout(syncTimer.current);
-      syncTimer.current = setTimeout(() => {
-        const c = map.current.getCenter();
-        studio.transaction(({ set }) => {
-          set(mapObj.current.props, {
-            lng: c.lng, lat: c.lat,
-            zoom: map.current.getZoom(),
-            pitch: map.current.getPitch(),
-            bearing: map.current.getBearing(),
-            pathProgress: 1,
-          });
-        });
-      }, 300);
     });
 
     const c = map.current.getCenter();
@@ -404,7 +361,7 @@ function App() {
       map.current.jumpTo({ center: [lng, lat], zoom, pitch, bearing });
       if (customPathCoords.current.length > 1) syncPathLayerRef.current(getInterpolatedPath(customPathCoords.current, v.pathProgress || 0));
     });
-    return () => { unsubscribe(); clearTimeout(syncTimer.current); map.current?.remove(); map.current = null; };
+    return () => { unsubscribe(); geocoder.onRemove(); map.current?.remove(); map.current = null; };
   }, []); // eslint-disable-line
 
   /* ── Pin helpers ─────────────────────────── */
@@ -530,6 +487,8 @@ function App() {
     pinsRef.current.push(p);
     await createPinMarker(p);
     setPins(prev => [...prev, p]);
+    setActivePinId(p.id); setRightTab('pin'); setBrowserVisible(true);
+    if (compact) setMobilePane('features');
   };
 
   const removePin = id => {
@@ -538,15 +497,6 @@ function App() {
     if (activePinId === id) setActivePinId(null);
     if (map.current?.hasImage(`pin-${id}`)) map.current.removeImage(`pin-${id}`);
     syncPinsLayer();
-  };
-
-  const syncToTimeline = () => {
-    if (!map.current || !mapObj.current) return;
-    const c = map.current.getCenter();
-    studio.transaction(({ set }) => {
-      set(mapObj.current.props, { lng: c.lng, lat: c.lat, zoom: map.current.getZoom(), pitch: map.current.getPitch(), bearing: map.current.getBearing(), pathProgress: 1 });
-    });
-    setStatus('Captured!'); setTimeout(() => setStatus('Ready.'), 1500);
   };
 
   /* ── Export helpers ──────────────────────── */
@@ -679,27 +629,137 @@ function App() {
     if (customPathCoords.current.length > 1) syncPathLayerRef.current(getInterpolatedPath(customPathCoords.current, v.pathProgress));
   };
 
+  const activatePane = pane => {
+    setMobilePane(pane);
+    if (pane === 'features') setRightTab('features');
+    if (!compact) {
+      if (pane === 'controls') setPanelVisible(v => !v);
+      if (pane === 'features') setBrowserVisible(v => rightTab === 'features' ? !v : true);
+    }
+    if (pane === 'map') map.current?.getCanvas().focus();
+  };
+  const showHelp = () => { setRightTab('help'); setBrowserVisible(true); if (compact) setMobilePane('features'); };
+  const fitSelection = () => {
+    const item = features.find(f => f.id === selectedFeature);
+    if (item) focusFeature(item.feature); else setStatus('Selecione um elemento para enquadrar.');
+  };
+  shortcutsRef.current = {
+    disabled: isRendering,
+    play: () => timelineRef.current?.play(), capture: () => timelineRef.current?.capture(),
+    back: () => timelineRef.current?.step(-1), forward: () => timelineRef.current?.step(1),
+    backTen: () => timelineRef.current?.step(-10), forwardTen: () => timelineRef.current?.step(10),
+    start: () => timelineRef.current?.start(), end: () => timelineRef.current?.end(),
+    previous: () => timelineRef.current?.previous(), next: () => timelineRef.current?.next(),
+    draw: () => { timelineRef.current?.pause(); setIsDrawing(true); }, select: () => setIsDrawing(false),
+    pin: addPin, fit: fitSelection, north: () => map.current?.easeTo({ bearing: 0, duration: 300 }),
+    save: saveScene, open: () => projectInput.current?.click(), help: showHelp,
+    timeline: () => setTimelineVisible(v => !v),
+    controls: () => activatePane('controls'), map: () => activatePane('map'), features: () => activatePane('features'),
+    focus: () => { const show = !panelVisible && !browserVisible; setPanelVisible(show); setBrowserVisible(show); setMobilePane('map'); },
+    escape: () => { timelineRef.current?.pause(); setIsDrawing(false); setRightTab('features'); },
+  };
+  useEffect(() => {
+    const keydown = event => {
+      if (shortcutsRef.current.disabled) return;
+      const action = shortcutAction(event);
+      if (!action || !shortcutsRef.current[action]) return;
+      event.preventDefault(); event.stopPropagation(); shortcutsRef.current[action]();
+    };
+    window.addEventListener('keydown', keydown, true);
+    return () => window.removeEventListener('keydown', keydown, true);
+  }, []);
+
   /* ── Render ── */
   return (
-    <div className={`app-container ${timelineVisible ? 'with-timeline' : ''}`}>
+    <div className={`app-container ${timelineVisible ? 'with-timeline' : ''}`} style={{ '--left-width': panelVisible ? 'var(--panel-left-size)' : '0px', '--right-width': browserVisible ? 'var(--panel-right-size)' : '0px', '--timeline-height': timelineVisible ? 'var(--timeline-size)' : '0px' }}>
       <header className="workspace-bar">
-        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.3.0</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
+        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.4.0</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
         <input aria-label="Nome do projeto" value={projectName} onChange={e => setProjectName(e.target.value)} />
-        <button onClick={() => setBrowserVisible(v => !v)}>Elementos</button>
-        <button onClick={() => setTimelineVisible(v => !v)}>Timeline</button>
-        <button onClick={saveScene}>Salvar projeto</button>
-        <button title="Substitui a cena e recarrega a página. Salve o projeto atual primeiro." onClick={() => projectInput.current.click()}>Abrir arquivo</button>
+        <nav className="workspace-navigation" aria-label="Áreas do editor">
+          <button title="Controles (1)" aria-pressed={compact ? mobilePane === 'controls' : panelVisible} onClick={() => activatePane('controls')}>Controles</button>
+          <button title="Mapa (2)" aria-pressed={compact && mobilePane === 'map'} onClick={() => activatePane('map')}>Mapa</button>
+          <button title="Elementos (3)" aria-pressed={compact ? mobilePane === 'features' : browserVisible} onClick={() => activatePane('features')}>Elementos</button>
+        </nav>
+        <button title="Mostrar / ocultar timeline (T)" aria-pressed={timelineVisible} onClick={() => setTimelineVisible(v => !v)}>Timeline</button>
+        <button title="Salvar projeto (Ctrl/⌘ + S)" aria-keyshortcuts="Control+S Meta+S" onClick={saveScene}>Salvar</button>
+        <button title="Substitui a cena e recarrega a página. Salve o projeto atual primeiro." onClick={() => projectInput.current.click()}>Abrir</button>
         <button onClick={() => { try { reopenScene(JSON.parse(localStorage.getItem(STORAGE_KEY))); } catch (err) { setStatus(`Cópia local: ${err.message}`); } }}>Reabrir local</button>
+        <button title="Atalhos (?)" aria-keyshortcuts="?" onClick={showHelp}>?</button>
         <input ref={projectInput} hidden type="file" accept=".json" onChange={openSceneFile} />
       </header>
-      {timelineVisible && <CameraTimeline points={waypoints} setPoints={setWaypoints} duration={settings.exportDuration}
+      <CameraTimeline ref={timelineRef} visible={timelineVisible} fps={settings.fps} points={waypoints} setPoints={setWaypoints} duration={settings.exportDuration}
         onDuration={exportDuration => setSettings(s => ({ ...s, exportDuration }))} onSeek={seekCamera} onCapture={captureCamera}
-        enabled={waypointMode} onEnabled={setWaypointMode} disabled={isRendering} onStatus={setStatus} />}
-      <div className="workspace-status" role="status">{status}</div>
-      {browserVisible && <aside className="geographic-panel">
+        enabled={waypointMode} onEnabled={setWaypointMode} disabled={isRendering} onStatus={setStatus} />
+      <footer className="workspace-status"><span role="status">{status}</span><span className="status-hint">Espaço · Play/Pause <span>◇ K · Capturar</span> <span>? · Atalhos</span></span></footer>
+      {(compact ? mobilePane === 'features' : browserVisible) && <aside className="geographic-panel" aria-label="Navegador e propriedades">
+        <nav className="inspector-tabs" aria-label="Painel direito">
+          {[['features', 'Elementos'], ['pin', 'Pin'], ['help', 'Atalhos']].map(([id, label]) => <button key={id} aria-pressed={rightTab === id} onClick={() => setRightTab(id)}>{label}</button>)}
+        </nav>
+        <div className="inspector-content">
+          {rightTab === 'features' && <>
         <FeatureBrowser items={features} setItems={setFeatures} selected={selectedFeature} onSelect={setSelectedFeature}
           onFocus={focusFeature} onLabel={labelFeature} onStatus={setStatus}
-          onRoute={item => { customPathCoords.current = item.feature.geometry.coordinates.map(p => [...p]); syncPathLayer(); setStatus('Rota pronta. Anime pathProgress no Studio de 0 a 1.'); }} />
+          onRoute={item => { customPathCoords.current = item.feature.geometry.coordinates.map(p => [...p]); syncPathLayer(); setStatus('Rota pronta. Ajuste Rota de 0 a 1 nas vistas da timeline.'); }} />
+          </>}
+          {rightTab === 'pin' && <>
+
+      {activePinId && pins.find(p => p.id === activePinId) && (() => {
+        const p = pins.find(x => x.id === activePinId);
+        return (
+          <DockPanel
+            title={`PIN · ${p.text || 'Sem nome'}`}
+            visible={true}
+          >
+            <div style={{ padding: '8px 0' }}>
+              <div className="prop-row">
+                <label>Estilo</label>
+                <select value={p.style} onChange={e => updatePin(p.id, 'style', e.target.value)}>
+                  <option value="bubble">Bubble</option>
+                  <option value="classic">Pin</option>
+                  <option value="square">Square</option>
+                  <option value="flag">Flag</option>
+                  <option value="dot">Dot</option>
+                </select>
+              </div>
+              <div className="prop-row">
+                <label>Escala do pin</label>
+                <input type="number" min="0.5" max="3" step="0.1" value={p.scale} onChange={e => updatePin(p.id, 'scale', e.target.value)} />
+              </div>
+              <div className="prop-hint">Texto do pin</div>
+              <div className="prop-row">
+                <label>Cor do texto</label>
+                <input type="color" value={p.textColor || '#ffffff'} onChange={e => updatePin(p.id, 'textColor', e.target.value)} />
+              </div>
+              <div className="prop-row">
+                <label>Fonte</label>
+                <select value={p.fontFamily || 'Inter, sans-serif'} onChange={e => updatePin(p.id, 'fontFamily', e.target.value)}>
+                  <option value="Inter, sans-serif">Inter</option>
+                  <option value="Arial, sans-serif">Arial</option>
+                  <option value="'Courier New', monospace">Courier New</option>
+                  <option value="'Times New Roman', serif">Times New Roman</option>
+                  <option value="'Comic Sans MS', cursive">Comic Sans</option>
+                  <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                  <option value="Impact, sans-serif">Impact</option>
+                </select>
+              </div>
+              <div className="prop-row">
+                <label>Escala do texto</label>
+                <input type="number" min="0.5" max="5" step="0.1" value={p.textScale || 1} onChange={e => updatePin(p.id, 'textScale', e.target.value)} />
+              </div>
+              <div className="prop-row">
+                <label>Posição X/Y</label>
+                <input type="number" step="1" value={p.textOffsetX || 0} onChange={e => updatePin(p.id, 'textOffsetX', e.target.value)} style={{ width: '40%' }} />
+                <input type="number" step="1" value={p.textOffsetY || 0} onChange={e => updatePin(p.id, 'textOffsetY', e.target.value)} style={{ width: '40%' }} />
+              </div>
+            </div>
+          </DockPanel>
+        );
+      })()}
+
+            {!pins.some(p => p.id === activePinId) && <div className="inspector-empty">Selecione um pin nos controles ou use P para adicionar um no centro do mapa.</div>}
+          </>}
+          {rightTab === 'help' && <ShortcutHelp />}
+        </div>
       </aside>}
       {isRendering && (
         <div className="render-overlay">
@@ -710,31 +770,15 @@ function App() {
         </div>
       )}
 
-      <div className="side-toggle" onClick={() => setPanelVisible(!panelVisible)} title={panelVisible ? 'Hide' : 'Show'}>
-        {panelVisible ? '◀' : '▶'}
-      </div>
-
-      <FloatingPanel
-        title={`${projectName} → Map`}
-        visible={panelVisible}
-        onClose={() => setPanelVisible(false)}
-        defaultPos={{ x: 20, y: 80 }}
+      <DockPanel
+        className="editor-sidebar"
+        title="MAPA E CÂMERA"
+        visible={compact ? mobilePane === 'controls' : panelVisible}
         footerChildren={
           <>
-            <div className="prop-row" style={{ gap: '4px' }}>
-              <button className="act-btn secondary" onClick={toggleStudio}>Studio</button>
-              <button className="act-btn secondary" onClick={syncToTimeline}>Capture</button>
-              <button
-                className={`act-btn ${liveSync ? 'live-on' : 'live-off'}`}
-                onClick={() => setLiveSync(!liveSync)}
-                title="Auto-capture map position on every move"
-              >
-                {liveSync ? '⬤ LIVE' : '○ LIVE'}
-              </button>
-            </div>
-
+            <div className="export-heading"><span>EXPORTAR SEQUÊNCIA</span><span>{settings.fps} fps</span></div>
             <div className="prop-row" style={{ marginTop: '4px' }}>
-              <label>Export Len (s)</label>
+              <label>Duração (s)</label>
               <input type="number" min="1" step="0.5" value={settings.exportDuration} onChange={e => setSettings(s => ({ ...s, exportDuration: parseFloat(e.target.value) || 3 }))} style={{ width: '60px' }} />
             </div>
 
@@ -760,17 +804,17 @@ function App() {
                 setCameraView(v); map.current?.jumpTo({ center: [v.lng, v.lat], zoom: v.zoom, pitch: v.pitch, bearing: v.bearing });
               }} />
           </div>)}
-          <div className="prop-hint">Use Capture para gravar a vista no Studio.</div>
+          <div className="prop-hint">K captura esta vista no tempo da timeline.</div>
         </Section>
-        <Section title="Workspace" id="ws" collapsed={sec.ws} onToggle={toggleSec}>
-          <div className="prop-row"><label>Format</label>
+        <Section title="Composição" id="ws" collapsed={sec.ws} onToggle={toggleSec}>
+          <div className="prop-row"><label>Formato</label>
             <select value={settings.resolution} onChange={e => setSettings(s => ({ ...s, resolution: e.target.value }))}>
               <option value="1920x1080">1920×1080</option>
               <option value="1080x1920">1080×1920</option>
               <option value="1080x1080">1080×1080</option>
             </select>
           </div>
-          <div className="prop-row"><label>Style</label>
+          <div className="prop-row"><label>Estilo</label>
             <select value={settings.mapStyle} onChange={e => setSettings(s => ({ ...s, mapStyle: e.target.value }))}>
               {!['bright', 'dark', 'positron', 'liberty'].some(v => settings.mapStyle === `https://tiles.openfreemap.org/styles/${v}`) && <option value={settings.mapStyle}>Personalizado</option>}
               <option value="https://tiles.openfreemap.org/styles/bright">Bright</option>
@@ -795,18 +839,18 @@ function App() {
           <button className="panel-btn" onClick={() => { try { const u = new URL(styleURL); if (u.protocol !== 'https:') throw new Error('Use uma URL HTTPS.'); setSettings(s => ({ ...s, mapStyle: u.href })); } catch (err) { setStatus(`Estilo: ${err.message}`); } }}>Aplicar estilo externo</button>
         </Section>
 
-        <Section title="Drawing" id="draw" collapsed={sec.draw} onToggle={toggleSec}>
-          <div className="prop-row"><label>Color</label>
+        <Section title="Rota" id="draw" collapsed={sec.draw} onToggle={toggleSec}>
+          <div className="prop-row"><label>Cor</label>
             <input type="color" value={settings.pathColor} onChange={e => { setSettings(s => ({ ...s, pathColor: e.target.value })); syncPathLayer(); }} />
           </div>
-          <div className="prop-row"><label>Width</label>
+          <div className="prop-row"><label>Traço</label>
             <input type="number" min="1" max="20" value={settings.pathWidth} onChange={e => setSettings(s => ({ ...s, pathWidth: e.target.value }))} />
           </div>
           <div className="prop-row" style={{ gap: '4px' }}>
             <button className={`panel-btn ${isDrawing ? 'active' : ''}`} onClick={() => setIsDrawing(!isDrawing)}>
-              {isDrawing ? 'LOCK PATH' : 'DRAW PATH'}
+              {isDrawing ? 'Concluir rota · V' : 'Desenhar rota · D'}
             </button>
-            <button className="panel-btn" onClick={() => { customPathCoords.current = []; syncPathLayer(); }}>CLEAR</button>
+            <button className="panel-btn" onClick={() => { customPathCoords.current = []; syncPathLayer(); }}>Limpar</button>
           </div>
         </Section>
 
@@ -816,78 +860,27 @@ function App() {
               <div className="pin-row">
                 <input type="color" value={p.color} onChange={e => updatePin(p.id, 'color', e.target.value)} className="color-dot" />
                 <input type="text" value={p.text} onChange={e => updatePin(p.id, 'text', e.target.value)} className="pin-text-input" />
-                <button className="pin-del" onClick={() => setActivePinId(p.id)} style={{ color: '#bbb' }}>⚙️</button>
-                <button className="pin-del" onClick={() => removePin(p.id)}>×</button>
+                <button className="pin-del" aria-label={`Editar pin ${p.text}`} onClick={() => { setActivePinId(p.id); setRightTab('pin'); setBrowserVisible(true); if (compact) setMobilePane('features'); }}>⚙</button>
+                <button className="pin-del" aria-label={`Excluir pin ${p.text}`} onClick={() => removePin(p.id)}>×</button>
               </div>
             </div>
           ))}
           <div className="prop-row">
-            <button className="panel-btn" onClick={addPin}>+ ADD PIN</button>
+            <button className="panel-btn" onClick={addPin}>+ Adicionar pin · P</button>
           </div>
         </Section>
-      </FloatingPanel>
+      </DockPanel>
 
-      {/* Pin Properties Floating Window */}
-      {activePinId && pins.find(p => p.id === activePinId) && (() => {
-        const p = pins.find(x => x.id === activePinId);
-        return (
-          <FloatingPanel
-            title={`Properties: ${p.text || 'Pin'}`}
-            visible={true}
-            onClose={() => setActivePinId(null)}
-            defaultPos={{ x: window.innerWidth - 300, y: 80 }}
-          >
-            <div style={{ padding: '8px 0' }}>
-              <div className="prop-row">
-                <label>Style</label>
-                <select value={p.style} onChange={e => updatePin(p.id, 'style', e.target.value)}>
-                  <option value="bubble">Bubble</option>
-                  <option value="classic">Pin</option>
-                  <option value="square">Square</option>
-                  <option value="flag">Flag</option>
-                  <option value="dot">Dot</option>
-                </select>
-              </div>
-              <div className="prop-row">
-                <label>Pin Scale</label>
-                <input type="number" min="0.5" max="3" step="0.1" value={p.scale} onChange={e => updatePin(p.id, 'scale', e.target.value)} />
-              </div>
-              <div className="prop-hint" style={{ marginTop: '8px', color: '#888' }}>Text Settings</div>
-              <div className="prop-row">
-                <label>Text Color</label>
-                <input type="color" value={p.textColor || '#ffffff'} onChange={e => updatePin(p.id, 'textColor', e.target.value)} />
-              </div>
-              <div className="prop-row">
-                <label>Font</label>
-                <select value={p.fontFamily || 'Inter, sans-serif'} onChange={e => updatePin(p.id, 'fontFamily', e.target.value)}>
-                  <option value="Inter, sans-serif">Inter</option>
-                  <option value="Arial, sans-serif">Arial</option>
-                  <option value="'Courier New', monospace">Courier New</option>
-                  <option value="'Times New Roman', serif">Times New Roman</option>
-                  <option value="'Comic Sans MS', cursive">Comic Sans</option>
-                  <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
-                  <option value="Impact, sans-serif">Impact</option>
-                </select>
-              </div>
-              <div className="prop-row">
-                <label>Text Scale</label>
-                <input type="number" min="0.5" max="5" step="0.1" value={p.textScale || 1} onChange={e => updatePin(p.id, 'textScale', e.target.value)} />
-              </div>
-              <div className="prop-row">
-                <label>Offset X/Y</label>
-                <input type="number" step="1" value={p.textOffsetX || 0} onChange={e => updatePin(p.id, 'textOffsetX', e.target.value)} style={{ width: '40%' }} />
-                <input type="number" step="1" value={p.textOffsetY || 0} onChange={e => updatePin(p.id, 'textOffsetY', e.target.value)} style={{ width: '40%' }} />
-              </div>
-            </div>
-          </FloatingPanel>
-        );
-      })()}
-
-      <div className="map-viewport">
+      <main className="map-workspace" aria-label="Prévia do mapa" hidden={compact && mobilePane !== 'map'}>
+        <div className="map-toolbar"><span className="view-mode-tag">{isDrawing ? 'DESENHANDO ROTA' : 'PRÉVIA'}</span><span>{settings.resolution.replace('x', ' × ')} · {settings.fps} fps</span><div className="map-search" ref={searchContainer} />
+          <div className="map-tools"><button title="Selecionar (V)" aria-pressed={!isDrawing} onClick={() => setIsDrawing(false)}>↖ Selecionar</button><button title="Desenhar rota (D)" aria-pressed={isDrawing} onClick={() => setIsDrawing(v => !v)}>⌁ Rota</button><button title="Enquadrar seleção (F)" onClick={fitSelection}>⌖</button><button title="Norte (N)" onClick={() => map.current?.easeTo({ bearing: 0, duration: 300 })}>N ↑</button></div>
+        </div>
+        <div className="map-viewport">
         <div ref={mapWrapper} className="map-container">
           <div ref={mapContainer} className="map-element" />
         </div>
-      </div>
+        </div>
+      </main>
     </div>
   );
 }

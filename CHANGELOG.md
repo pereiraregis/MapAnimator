@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.0 — 2026-10-22
+
+- Replaced floating windows with a docked workspace: controls/export on the left, central composition preview, feature/pin/help inspector on the right, bottom timeline and status bar.
+- Responsive single-pane workspace at narrow widths; toolbar navigation between controls, map and elements. Sidebars and timeline can be hidden without overlaying the composition.
+- Search moved to the map toolbar at readable UI size. Canvas fitting responds to dock changes with ResizeObserver while preserving export aspect ratio.
+- Timeline ruler, clickable view diamonds, playhead, timecode and frame stepping. Hiding the timeline preserves playback and playhead state.
+- Keyboard shortcuts for playback, capture, frame/view navigation, drawing, pins, framing, north, save/open, workspace focus and help. Text/value editing, IME composition, browser modifier shortcuts and render operations are protected.
+- Removed the floating Theatre UI entry point; existing Theatre project state and legacy export remain supported. New animation editing uses the docked camera timeline.
+
 ## v0.3.0 — 2026-10-22
 
 - Geographic feature browser with GeoJSON import, selection, per-element styles, visibility, labels, framing and export.

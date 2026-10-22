@@ -1,5 +1,15 @@
 # Validação — 22/10/2026
 
+## v0.4.0 — layout encaixado e atalhos
+
+- **16 testes passaram** em três suites. Novos testes cobrem atalhos de transporte, composição IME, digitação em campos, modificadores, repetição de teclas e comandos reservados do navegador.
+- Build de produção concluído; permanecem os avisos de dependência dinâmica e tamanho do bundle.
+- Navegador: K capturou duas vistas; Espaço alternou reprodução/pausa; seta avançou um frame (timecode 00:00:01); Shift+seta avançou dez frames (00:00:10). Ocultar/reabrir a timeline com T preservou o tempo de 0,3333 s.
+- Digitar Espaço e K no nome do projeto produziu `Projeto k`, sem executar os comandos do editor. P criou pin e abriu suas propriedades na aba fixa. Backslash recolheu/restaurou laterais e a ajuda abriu na aba de atalhos. Console sem erros nessas verificações.
+- Em **1280×720**, laterais de 264/304 px, mapa com região de 712×437 px e timeline de 204 px ocuparam áreas separadas. O frame 16:9 permaneceu dentro da região central; não havia painéis flutuantes nem overflow horizontal.
+- Em **800×720**, alternância de mapa/controles/inspetor exibiu uma região por vez. Em **390×844**, barra superior de 70 px, região de trabalho de 521 px, timeline de 226 px e status de 27 px ficaram dentro da tela, sem overflow horizontal. O override de viewport usado no teste foi restaurado ao final.
+- Exportação MP4/PNG não foi repetida nesta atualização de layout. O exportador e o formato de cena foram preservados; a UI flutuante do Theatre deixou de ser exposta, mantendo leitura/exportação de tracks legadas.
+
 ## v0.3.0 — validação adicional
 
 - **11 testes passaram** em duas suites: incluindo interpolação de câmera, caminho angular curto, easing, tempos duplicados, parsing CSV/TSV, campos entre aspas, coordenadas ausentes e restauração de estilos do mapa-base.
