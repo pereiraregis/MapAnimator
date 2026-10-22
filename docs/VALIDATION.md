@@ -1,3 +1,13 @@
+## v0.4.1 — pins e créditos
+
+- 19 testes passaram em quatro suites. Novos testes verificam limites de labels longos, offsets negativos/abaixo do pin e dimensões independentes de densidade da tela.
+- Build de produção concluído com os avisos existentes de dependência dinâmica e tamanho do bundle (590,5 kB gzip).
+- Navegador: P criou pin visível; arraste alterou coordenadas de (-46.633, -23.55) para (-46.588834, -23.567653) mantendo a câmera em (-46.633, -23.55). Texto e formato responderam às edições.
+- Cena salva e reaberta preservou o pin, texto, formato e posição. Adicionar depois de reabrir não duplicou os pins existentes. Exclusão removeu o pin selecionado.
+- Reproduzido defeito de pins sumindo ao trocar Bright por Dark: setStyle com diff removia as fontes personalizadas sem emitir style.load. Com diff:false, os pins reapareceram e criar novos pins continuou funcionando. Console sem erros no teste final.
+- Créditos dinâmicos do provedor visíveis no rodapé do editor; nenhuma faixa de atribuição sobre a composição. A rotina de captura busca os créditos no editor e mantém a atribuição nos frames exportados.
+- Exportação de mídia e interação touch não foram revalidadas nesta correção.
+
 # Validação — 22/10/2026
 
 ## v0.4.0 — layout encaixado e atalhos

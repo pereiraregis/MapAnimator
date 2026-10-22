@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.1 — 2026-10-22
+
+- Rebuild custom layers after basemap changes instead of losing pin, route and feature sources during style diffing.
+- Generate pin images synchronously with stable display density, tight bounds and offset labels below the anchor. Avoid asynchronous edits overwriting newer values.
+- Pin dragging locks camera pan and finishes when releasing outside the canvas; restored scenes add pins without duplicating state.
+- Pin inspector now includes add/delete, text, color and coordinates.
+- Move dynamic provider credits out of the scaled map preview into the editor footer. Exported frames keep provider attribution.
+
 ## v0.4.0 — 2026-10-22
 
 - Replaced floating windows with a docked workspace: controls/export on the left, central composition preview, feature/pin/help inspector on the right, bottom timeline and status bar.
