@@ -12,6 +12,7 @@ import FeatureBrowser from './FeatureBrowser';
 import CameraTimeline from './CameraTimeline';
 import ShortcutHelp from './ShortcutHelp';
 import { shortcutAction } from './shortcuts';
+import { createPinImage } from './geo/pins';
 import { sampleCamera } from './geo/animation';
 import { BASEMAP_DEFAULTS, isBasemapLayer, applyBasemap } from './geo/basemap';
 import { featureBounds } from './geo/features';
@@ -25,14 +26,6 @@ studio.initialize({ usePersistentStorage: !reopenedScene });
 studio.ui.hide();
 const project = getProject('MapAnimator v2', reopenedScene ? { state: reopenedScene.theatre } : undefined);
 const sheet = project.sheet('Main Scene');
-
-const SVGS = {
-  'classic': `<svg viewBox="0 0 24 24" fill="%C" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" stroke="white" stroke-width="1"/></svg>`,
-  'bubble': `<svg viewBox="0 0 100 50" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="96" height="46" rx="15" fill="%C" stroke="white" stroke-width="3"/><path d="M50 48 L40 60 L60 60 Z" fill="%C"/></svg>`,
-  'square': `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="20" height="20" rx="4" fill="%C" stroke="white" stroke-width="2"/><path d="M12 22l-4 4h8l-4-4z" fill="%C"/></svg>`,
-  'flag': `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M5 2v20" stroke="white" stroke-width="2"/><path d="M5 4h14l-4 5 4 5H5" fill="%C"/></svg>`,
-  'dot': `<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="8" fill="%C" stroke="white" stroke-width="2"/></svg>`
-};
 
 const distance = (p1, p2) => Math.sqrt((p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2);
 const getInterpolatedPath = (coords, progress) => {
@@ -69,7 +62,7 @@ const captureMapFrame = (mapInstance, [W, H]) =>
       const ctx = out.getContext('2d');
       ctx.drawImage(src, 0, 0, W, H);
       // DOM controls are outside WebGL; burn provider attribution into exports.
-      const text = [...mapInstance.getContainer().querySelectorAll('.maplibregl-ctrl-attrib-inner')].map(el => el.textContent).join(' · ') || '© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors';
+      const text = [...mapInstance.getContainer().closest('.app-container').querySelectorAll('.maplibregl-ctrl-attrib-inner')].map(el => el.textContent).join(' · ') || '© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors';
       const fontSize = Math.max(12, Math.round(W / 120));
       ctx.font = `${fontSize}px Arial`;
       const boxWidth = Math.min(W, ctx.measureText(text).width + 20);
@@ -102,7 +95,7 @@ const Section = ({ title, id, collapsed, onToggle, children }) => (
 
 function App() {
   const mapContainer = useRef(null), map = useRef(null), mapWrapper = useRef(null);
-  const searchContainer = useRef(null);
+  const searchContainer = useRef(null), creditsContainer = useRef(null);
   const [pins, setPins] = useState(reopenedScene?.pins || []);
   const [features, setFeatures] = useState(reopenedScene?.features || []);
   const [selectedFeature, setSelectedFeature] = useState(null);
@@ -188,6 +181,7 @@ function App() {
         properties: {
           id: p.id,
           imageId: `pin-${p.id}`,
+          iconOffset: p.iconOffset || [0, 3],
           text: p.text || '',
           textScale: p.textScale || 1,
           textOffsetX: p.textOffsetX || 0,
@@ -221,7 +215,8 @@ function App() {
           'icon-image': ['get', 'imageId'],
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
-          'icon-anchor': 'bottom'
+          'icon-anchor': 'bottom',
+          'icon-offset': ['get', 'iconOffset']
         }
       });
 
@@ -252,7 +247,9 @@ function App() {
   }, [updateViewport]);
 
   useEffect(() => {
-    if (map.current) map.current.setStyle(settings.mapStyle);
+    // Full reload emits style.load so custom pin/route/feature sources rebuild.
+    // Style diffing removes those sources without running our setup callback.
+    if (map.current) map.current.setStyle(settings.mapStyle, { diff: false });
   }, [settings.mapStyle]);
 
   useEffect(() => { syncPathLayer(); }, [syncPathLayer]);
@@ -265,8 +262,11 @@ function App() {
       container: mapContainer.current, style: settings.mapStyle,
       center: reopenedScene ? [reopenedScene.camera.lng, reopenedScene.camera.lat] : [-46.633, -23.550],
       zoom: reopenedScene?.camera.zoom ?? 12, pitch: reopenedScene?.camera.pitch ?? 0, bearing: reopenedScene?.camera.bearing ?? 0,
-      preserveDrawingBuffer: true, antialias: true, attributionControl: { compact: false },
+      preserveDrawingBuffer: true, antialias: true, attributionControl: false,
     });
+
+    const attribution = new maplibregl.AttributionControl({ compact: false });
+    creditsContainer.current.appendChild(attribution.onAdd(map.current));
 
     map.current.on('style.load', () => {
       basemapOriginals.current = map.current.getStyle().layers.filter(isBasemapLayer);
@@ -298,6 +298,7 @@ function App() {
     map.current.on('click', e => {
       if (isDrawingRef.current) { customPathCoords.current.push([e.lngLat.lng, e.lngLat.lat]); syncPathLayerRef.current(); }
       else {
+        if (map.current.queryRenderedFeatures(e.point, { layers: ['pins-icon-layer'].filter(id => map.current.getLayer(id)) }).length) return;
         const layers = ['ma-points', 'ma-outlines', 'ma-polygons'].filter(id => map.current.getLayer(id));
         const hit = layers.length && map.current.queryRenderedFeatures(e.point, { layers })[0];
         if (hit) { setSelectedFeature(hit.properties._maId); setRightTab('features'); setBrowserVisible(true); }
@@ -306,17 +307,19 @@ function App() {
 
     // Native pin dragging logic (bind to icon layer)
     map.current.on('mousedown', 'pins-icon-layer', e => {
+      if (isDrawingRef.current || e.originalEvent.button !== 0) return;
       e.preventDefault();
       const feature = e.features[0];
       if (feature) {
         setActivePinId(feature.properties.id); setRightTab('pin'); setBrowserVisible(true);
-        dragState.current = { id: feature.properties.id, active: true };
+        dragState.current = { id: feature.properties.id, active: true, panEnabled: map.current.dragPan.isEnabled() };
+        map.current.dragPan.disable();
         map.current.getCanvasContainer().style.cursor = 'grabbing';
       }
     });
 
     map.current.on('mousemove', e => {
-      if (dragState.current.active && dragState.current.id) {
+      if (dragState.current.active) {
         const id = dragState.current.id;
         const pList = pinsRef.current;
         const idx = pList.findIndex(p => p.id === id);
@@ -328,13 +331,17 @@ function App() {
       }
     });
 
-    map.current.on('mouseup', () => {
+    const finishPinDrag = () => {
       if (dragState.current.active) {
         dragState.current.active = false;
+        if (dragState.current.panEnabled) map.current.dragPan.enable();
         map.current.getCanvasContainer().style.cursor = '';
-        setPins([...pinsRef.current]); // trigger React re-render
+        setPins([...pinsRef.current]);
       }
-    });
+    };
+    map.current.on('mouseup', finishPinDrag);
+    window.addEventListener('mouseup', finishPinDrag);
+    window.addEventListener('blur', finishPinDrag);
 
     map.current.on('moveend', () => {
       const center = map.current.getCenter();
@@ -361,106 +368,24 @@ function App() {
       map.current.jumpTo({ center: [lng, lat], zoom, pitch, bearing });
       if (customPathCoords.current.length > 1) syncPathLayerRef.current(getInterpolatedPath(customPathCoords.current, v.pathProgress || 0));
     });
-    return () => { unsubscribe(); geocoder.onRemove(); map.current?.remove(); map.current = null; };
+    return () => { window.removeEventListener('mouseup', finishPinDrag); window.removeEventListener('blur', finishPinDrag); unsubscribe(); attribution.onRemove(); geocoder.onRemove(); map.current?.remove(); map.current = null; };
   }, []); // eslint-disable-line
 
   /* ── Pin helpers ─────────────────────────── */
-  const createPinCanvas = async pin => {
-    const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
-    const bw = pin.style === 'bubble' ? 100 : 50, scale = pin.scale || 1, dpr = window.devicePixelRatio || 1;
-
-    // We add a large padding to the canvas so text doesn't clip when offset.
-    const padX = 150 * dpr; // padding on each side
-    const padY = 150 * dpr; // padding on top/bottom
-    const imgW = bw * scale * dpr;
-    const imgH = 50 * scale * dpr;
-
-    canvas.width = imgW + (padX * 2);
-    canvas.height = imgH + (padY * 2);
-
-    const img = new Image();
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent((SVGS[pin.style] || SVGS.classic).replace(/%C/g, pin.color));
-    await new Promise(r => img.onload = r);
-
-    // Draw the pin image in the center horizontally, and offset vertically so the tip of the pin
-    // is exactly sitting at a predictable anchor. We anchor nearest to the bottom.
-    // We leave padY space above, and padY space below the image.
-    const drawX = padX;
-    const drawY = padY;
-    ctx.drawImage(img, drawX, drawY, imgW, imgH);
-
-    // Draw text natively directly onto the image buffer
-    if (pin.text) {
-      const fs = 12 * scale * (pin.textScale || 1) * dpr;
-      const font = pin.fontFamily || 'Inter, sans-serif';
-      ctx.font = `800 ${fs}px ${font}`;
-      ctx.fillStyle = pin.textColor || '#fff';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-
-      // Simple dark shadow outline for contrast
-      ctx.shadowColor = 'rgba(0,0,0,0.8)';
-      ctx.shadowBlur = 2 * dpr;
-
-      // We can also stroke the text slightly to make it pop like MapLibre does
-      ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-      ctx.lineWidth = 2 * dpr;
-
-      // Base text coordinates (centered over the image)
-      const textBaseX = drawX + (imgW / 2);
-      const textBaseY = drawY + (imgH / 2.3);
-
-      const px = textBaseX + (pin.textOffsetX || 0) * dpr;
-      const py = textBaseY + (pin.textOffsetY || 0) * dpr;
-
-      ctx.strokeText(pin.text, px, py);
-      ctx.fillText(pin.text, px, py);
-    }
-
-    // Since the canvas is now much taller to accommodate the text offset, MapLibre's 'bottom' anchor
-    // would target the bottom of the padded canvas, not the tip of the pin.
-    // We can offset the icon rendering in MapLibre or pass a custom anchor/height.
-    // MapLibre centers the icon above the point if anchor is 'bottom', assuming the
-    // point is at the bottom middle. 
-    // Since our pin image sits at drawY, the tip of the pin is at `drawY + imgH`.
-    // The empty padding below the pin is `padY`.
-    // We'll leave the anchor at 'bottom' in MapLibre, but we'll trim the canvas exactly at the pin's tip
-    // so we don't have to fight map offset math.
-
-    // Create a new strictly trimmed canvas that cuts off everything below the pin tip,
-    // so the 'bottom' anchor of MapLibre aligns perfectly with the pin tip, but leaves the huge ceiling for text.
-    const trimmedH = drawY + imgH;
-    const trimmedCanvas = document.createElement('canvas');
-    trimmedCanvas.width = canvas.width;
-    trimmedCanvas.height = trimmedH;
-    const tCtx = trimmedCanvas.getContext('2d');
-    tCtx.drawImage(canvas, 0, 0, canvas.width, trimmedH, 0, 0, canvas.width, trimmedH);
-
-    return {
-      data: tCtx.getImageData(0, 0, trimmedCanvas.width, trimmedCanvas.height),
-      w: trimmedCanvas.width,
-      h: trimmedCanvas.height,
-      style: pin.style
-    };
-  };
-
-  const createPinMarker = useCallback(async pin => {
-    if (!map.current) return;
+  const createPinMarker = useCallback(pin => {
+    if (!map.current?.getSource('pins-source')) return;
     try {
-      const { data } = await createPinCanvas(pin);
+      const { data, pixelRatio, offset } = createPinImage(pin);
+      pin.iconOffset = offset;
       const imgId = `pin-${pin.id}`;
-      // MapLibre requires removing an image before updating it if it already exists
-      if (map.current.hasImage(imgId)) {
-        map.current.removeImage(imgId);
-      }
-      map.current.addImage(imgId, data);
+      if (map.current.hasImage(imgId)) map.current.removeImage(imgId);
+      map.current.addImage(imgId, data, { pixelRatio });
       syncPinsLayer();
-      // Force repaint to make it appear immediately
       map.current.triggerRepaint();
     } catch (err) {
-      console.error('Failed to create pin marker image:', err);
+      setStatus(`Pin: ${err.message}`);
     }
-  }, [syncPinsLayer]); // eslint-disable-line
+  }, [syncPinsLayer]);
 
   const updatePin = async (id, field, value) => {
     const isFloat = ['scale', 'textScale'].includes(field);
@@ -468,25 +393,31 @@ function App() {
     let val = value;
     if (isFloat) val = parseFloat(value);
     if (isInt) val = parseInt(value, 10);
+    if ((isFloat || isInt || ['lng', 'lat'].includes(field)) && !Number.isFinite(Number(val))) return;
+    if (['lng', 'lat'].includes(field)) val = Number(value);
+    if (field === 'lng' && (val < -180 || val > 180)) return;
+    if (field === 'lat' && (val < -85 || val > 85)) return;
 
     const idx = pinsRef.current.findIndex(p => p.id === id);
     if (idx !== -1) {
       const p = { ...pinsRef.current[idx], [field]: val };
-      pinsRef.current[idx] = p; await createPinMarker(p);
+      pinsRef.current = pinsRef.current.map(x => x.id === id ? p : x); createPinMarker(p);
       setPins(prev => prev.map(x => x.id === id ? p : x));
     }
   };
 
   const addPin = async () => {
+    if (!map.current?.getSource('pins-source')) { setStatus('Aguarde o mapa carregar para adicionar um pin.'); return; }
     const c = map.current.getCenter();
     const p = {
       id: crypto.randomUUID(), lng: c.lng, lat: c.lat, text: 'Pin', color: '#ec4899',
       scale: 1.0, style: 'bubble', textScale: 1, textOffsetX: 0, textOffsetY: 0,
       textColor: '#ffffff', fontFamily: 'Inter, sans-serif', marker: null
     };
-    pinsRef.current.push(p);
-    await createPinMarker(p);
-    setPins(prev => [...prev, p]);
+    pinsRef.current = [...pinsRef.current, p];
+    createPinMarker(p);
+    setPins([...pinsRef.current]);
+    setStatus('Pin adicionado. Arraste no mapa ou ajuste as propriedades.');
     setActivePinId(p.id); setRightTab('pin'); setBrowserVisible(true);
     if (compact) setMobilePane('features');
   };
@@ -495,8 +426,8 @@ function App() {
     pinsRef.current = pinsRef.current.filter(x => x.id !== id);
     setPins(prev => prev.filter(x => x.id !== id));
     if (activePinId === id) setActivePinId(null);
-    if (map.current?.hasImage(`pin-${id}`)) map.current.removeImage(`pin-${id}`);
     syncPinsLayer();
+    if (map.current?.hasImage(`pin-${id}`)) map.current.removeImage(`pin-${id}`);
   };
 
   /* ── Export helpers ──────────────────────── */
@@ -673,7 +604,7 @@ function App() {
   return (
     <div className={`app-container ${timelineVisible ? 'with-timeline' : ''}`} style={{ '--left-width': panelVisible ? 'var(--panel-left-size)' : '0px', '--right-width': browserVisible ? 'var(--panel-right-size)' : '0px', '--timeline-height': timelineVisible ? 'var(--timeline-size)' : '0px' }}>
       <header className="workspace-bar">
-        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.4.0</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
+        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.4.1</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
         <input aria-label="Nome do projeto" value={projectName} onChange={e => setProjectName(e.target.value)} />
         <nav className="workspace-navigation" aria-label="Áreas do editor">
           <button title="Controles (1)" aria-pressed={compact ? mobilePane === 'controls' : panelVisible} onClick={() => activatePane('controls')}>Controles</button>
@@ -690,7 +621,7 @@ function App() {
       <CameraTimeline ref={timelineRef} visible={timelineVisible} fps={settings.fps} points={waypoints} setPoints={setWaypoints} duration={settings.exportDuration}
         onDuration={exportDuration => setSettings(s => ({ ...s, exportDuration }))} onSeek={seekCamera} onCapture={captureCamera}
         enabled={waypointMode} onEnabled={setWaypointMode} disabled={isRendering} onStatus={setStatus} />
-      <footer className="workspace-status"><span role="status">{status}</span><span className="status-hint">Espaço · Play/Pause <span>◇ K · Capturar</span> <span>? · Atalhos</span></span></footer>
+      <footer className="workspace-status"><span role="status">{status}</span><div ref={creditsContainer} className="map-credits" aria-label="Créditos do mapa" /><span className="status-hint">Espaço · Play/Pause <span>◇ K · Capturar</span> <span>? · Atalhos</span></span></footer>
       {(compact ? mobilePane === 'features' : browserVisible) && <aside className="geographic-panel" aria-label="Navegador e propriedades">
         <nav className="inspector-tabs" aria-label="Painel direito">
           {[['features', 'Elementos'], ['pin', 'Pin'], ['help', 'Atalhos']].map(([id, label]) => <button key={id} aria-pressed={rightTab === id} onClick={() => setRightTab(id)}>{label}</button>)}
@@ -702,8 +633,9 @@ function App() {
           onRoute={item => { customPathCoords.current = item.feature.geometry.coordinates.map(p => [...p]); syncPathLayer(); setStatus('Rota pronta. Ajuste Rota de 0 a 1 nas vistas da timeline.'); }} />
           </>}
           {rightTab === 'pin' && <>
+            <div className="feature-actions"><button onClick={addPin}>+ Adicionar pin · P</button>{activePinId !== null && <button onClick={() => removePin(activePinId)}>Excluir pin</button>}</div>
 
-      {activePinId && pins.find(p => p.id === activePinId) && (() => {
+      {activePinId !== null && pins.find(p => p.id === activePinId) && (() => {
         const p = pins.find(x => x.id === activePinId);
         return (
           <DockPanel
@@ -711,6 +643,11 @@ function App() {
             visible={true}
           >
             <div style={{ padding: '8px 0' }}>
+              <div className="prop-row"><label htmlFor="pin-label">Texto</label><input id="pin-label" value={p.text} onChange={e => updatePin(p.id, 'text', e.target.value)} style={{ width: '60%' }} /></div>
+              <div className="prop-row"><label htmlFor="pin-color">Cor do pin</label><input id="pin-color" type="color" value={p.color} onChange={e => updatePin(p.id, 'color', e.target.value)} /></div>
+              <div className="prop-row"><label htmlFor="pin-lng">Longitude</label><input id="pin-lng" type="number" step="0.0001" value={p.lng} onChange={e => updatePin(p.id, 'lng', e.target.value)} /></div>
+              <div className="prop-row"><label htmlFor="pin-lat">Latitude</label><input id="pin-lat" type="number" step="0.0001" value={p.lat} onChange={e => updatePin(p.id, 'lat', e.target.value)} /></div>
+              <div className="prop-hint">Arraste o pin no mapa para reposicionar.</div>
               <div className="prop-row">
                 <label>Estilo</label>
                 <select value={p.style} onChange={e => updatePin(p.id, 'style', e.target.value)}>
