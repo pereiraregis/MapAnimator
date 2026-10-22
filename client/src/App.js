@@ -8,13 +8,23 @@ import { toBlobURL } from '@ffmpeg/util';
 import { getProject, types } from '@theatre/core';
 import studio from '@theatre/studio';
 import JSZip from 'jszip';
+import FeatureBrowser from './FeatureBrowser';
+import CameraTimeline from './CameraTimeline';
+import { sampleCamera } from './geo/animation';
+import { BASEMAP_DEFAULTS, isBasemapLayer, applyBasemap } from './geo/basemap';
+import { featureBounds } from './geo/features';
+import { syncFeatureLayers } from './geo/layers';
+import { geocode } from './geo/geocoding';
+import { STORAGE_KEY, REOPEN_KEY, readReopenedScene, validateScene, downloadJSON } from './geo/scene';
 import './App.css';
 
-studio.initialize();
-const project = getProject('MapAnimator v2');
+const reopenedScene = readReopenedScene();
+studio.initialize({ usePersistentStorage: !reopenedScene });
+studio.ui.hide();
+const project = getProject('MapAnimator v2', reopenedScene ? { state: reopenedScene.theatre } : undefined);
 const sheet = project.sheet('Main Scene');
 
-let studioHidden = false;
+let studioHidden = true;
 const toggleStudio = () => {
   if (studioHidden) { studio.ui.restore(); studioHidden = false; }
   else { studio.ui.hide(); studioHidden = true; }
@@ -60,7 +70,15 @@ const captureMapFrame = (mapInstance, [W, H]) =>
       const src = mapInstance.getCanvas();
       const out = document.createElement('canvas');
       out.width = W; out.height = H;
-      out.getContext('2d').drawImage(src, 0, 0, W, H);
+      const ctx = out.getContext('2d');
+      ctx.drawImage(src, 0, 0, W, H);
+      // DOM controls are outside WebGL; burn provider attribution into exports.
+      const text = [...mapInstance.getContainer().querySelectorAll('.maplibregl-ctrl-attrib-inner')].map(el => el.textContent).join(' · ') || '© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors';
+      const fontSize = Math.max(12, Math.round(W / 120));
+      ctx.font = `${fontSize}px Arial`;
+      const boxWidth = Math.min(W, ctx.measureText(text).width + 20);
+      ctx.fillStyle = 'rgba(255,255,255,0.88)'; ctx.fillRect(W - boxWidth, H - fontSize - 12, boxWidth, fontSize + 12);
+      ctx.fillStyle = '#222'; ctx.fillText(text, W - boxWidth + 8, H - 8, boxWidth - 16);
       out.toBlob(async blob => resolve(new Uint8Array(await blob.arrayBuffer())), 'image/png', 0.95);
     };
     mapInstance.once('render', doCapture);
@@ -121,13 +139,29 @@ const Section = ({ title, id, collapsed, onToggle, children }) => (
 
 function App() {
   const mapContainer = useRef(null), map = useRef(null), mapWrapper = useRef(null);
-  const [pins, setPins] = useState([]);
+  const [pins, setPins] = useState(reopenedScene?.pins || []);
+  const [features, setFeatures] = useState(reopenedScene?.features || []);
+  const [selectedFeature, setSelectedFeature] = useState(null);
+  const [browserVisible, setBrowserVisible] = useState(true);
+  const [projectName, setProjectName] = useState(reopenedScene?.name || 'Main Scene');
+  const [cameraView, setCameraView] = useState(reopenedScene?.camera || { lng: -46.633, lat: -23.550, zoom: 12, pitch: 0, bearing: 0 });
+  const [waypoints, setWaypoints] = useState(reopenedScene?.waypoints || []);
+  const [waypointMode, setWaypointMode] = useState(reopenedScene?.cameraMode === 'waypoints');
+  const [timelineVisible, setTimelineVisible] = useState(true);
+  const [appearance, setAppearance] = useState(reopenedScene?.appearance || { ...BASEMAP_DEFAULTS });
+  const [styleURL, setStyleURL] = useState('');
+  const basemapOriginals = useRef([]), appearanceRef = useRef(appearance), animationModeRef = useRef(false);
+  appearanceRef.current = appearance; animationModeRef.current = waypointMode && waypoints.length > 0;
+  const projectInput = useRef(null), featuresRef = useRef(features);
+  const setupLayersRef = useRef(null);
+  const syncPathLayerRef = useRef(null);
+  featuresRef.current = features;
   const [isDrawing, setIsDrawing] = useState(false);
   const [status, setStatus] = useState('Ready.');
   const [isRendering, setIsRendering] = useState(false);
   const [panelVisible, setPanelVisible] = useState(true);
   const [sec, setSec] = useState({});
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState(reopenedScene?.settings || {
     resolution: '1920x1080', mapStyle: 'https://tiles.openfreemap.org/styles/bright',
     pathColor: '#ec4899', pathWidth: 5, fps: 30, exportDuration: 3,
     // Animation timing controls
@@ -140,7 +174,7 @@ function App() {
   const [liveSync, setLiveSync] = useState(false); // live map→Theatre sync toggle
   const toggleSec = id => setSec(p => ({ ...p, [id]: !p[id] }));
 
-  const customPathCoords = useRef([]), pinsRef = useRef([]);
+  const customPathCoords = useRef(reopenedScene?.route || []), pinsRef = useRef(reopenedScene?.pins || []);
   const isDrawingRef = useRef(false);
   useEffect(() => { isDrawingRef.current = isDrawing; }, [isDrawing]);
 
@@ -176,6 +210,7 @@ function App() {
       map.current.getSource('route-source').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords } });
     }
   }, [settings.pathColor, settings.pathWidth]);
+  syncPathLayerRef.current = syncPathLayer;
 
   const syncPinsLayer = useCallback(() => {
     if (map.current?.getSource('pins-source')) {
@@ -222,32 +257,13 @@ function App() {
         }
       });
 
-      // Layer 2: The Pin Text
-      map.current.addLayer({
-        id: 'pins-text-layer',
-        type: 'symbol',
-        source: 'pins-source',
-        layout: {
-          'text-field': ['get', 'text'],
-          'text-size': ['*', 12, ['get', 'textScale']],
-          'text-anchor': 'bottom',
-          'text-offset': [
-            '/', ['get', 'textOffsetX'], 10,
-            '-', ['/', ['get', 'textOffsetY'], 10], 4.2
-          ],
-          'text-allow-overlap': true,
-          'text-ignore-placement': true
-        },
-        paint: {
-          'text-color': 'rgba(255,255,255,0)', // Hide text visually, we'll draw it on canvas
-          'text-halo-color': 'rgba(0,0,0,0)',
-          'text-halo-width': 0
-        }
-      });
+      // Labels are rasterized into each icon; a second symbol layer would
+      // unnecessarily request glyphs and delay placement of this source.
     }
     syncPathLayer();
     syncPinsLayer();
   }, [settings.pathColor, settings.pathWidth, syncPathLayer, syncPinsLayer]);
+  setupLayersRef.current = setupLayers;
 
   const updateViewport = useCallback(() => {
     if (!mapWrapper.current) return;
@@ -265,36 +281,56 @@ function App() {
   }, [updateViewport]);
 
   useEffect(() => {
-    if (map.current) { map.current.setStyle(settings.mapStyle); map.current.once('styledata', setupLayers); }
-  }, [settings.mapStyle, setupLayers]);
+    if (map.current) map.current.setStyle(settings.mapStyle);
+  }, [settings.mapStyle]);
+
+  useEffect(() => { syncPathLayer(); }, [syncPathLayer]);
+  useEffect(() => { syncFeatureLayers(map.current, features); }, [features]);
+  useEffect(() => { applyBasemap(map.current, basemapOriginals.current, appearance); }, [appearance]);
 
   useEffect(() => {
     if (map.current) return;
     map.current = new maplibregl.Map({
       container: mapContainer.current, style: settings.mapStyle,
-      center: [-46.633, -23.550], zoom: 12, preserveDrawingBuffer: true, antialias: true, attributionControl: false,
+      center: reopenedScene ? [reopenedScene.camera.lng, reopenedScene.camera.lat] : [-46.633, -23.550],
+      zoom: reopenedScene?.camera.zoom ?? 12, pitch: reopenedScene?.camera.pitch ?? 0, bearing: reopenedScene?.camera.bearing ?? 0,
+      preserveDrawingBuffer: true, antialias: true, attributionControl: { compact: false },
     });
 
-    map.current.on('load', () => {
+    map.current.on('style.load', () => {
+      basemapOriginals.current = map.current.getStyle().layers.filter(isBasemapLayer);
+      applyBasemap(map.current, basemapOriginals.current, appearanceRef.current);
+      setupLayersRef.current();
+      syncFeatureLayers(map.current, featuresRef.current, true);
+      pinsRef.current.forEach(pin => createPinMarker(pin));
+    });
+    map.current.on('error', e => setStatus(`Mapa: ${e.error?.message || 'Falha ao carregar dados.'}`));
+
       map.current.on('styleimagemissing', e => {
+        // Pins are supplied asynchronously at their actual size. A 1px placeholder
+        // would make MapLibre cache the wrong icon dimensions on project restore.
+        if (e.id.startsWith('pin-')) return;
         const c = document.createElement('canvas'); c.width = 1; c.height = 1;
         if (!map.current.hasImage(e.id)) map.current.addImage(e.id, c.getContext('2d').getImageData(0, 0, 1, 1));
       });
       const geocoder = new MaplibreGeocoder({
         forwardGeocode: async (cfg) => {
           try {
-            const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${cfg.query}&format=geojson&addressdetails=1&limit=5`);
-            const g = await r.json();
+            const g = await geocode(cfg.query, localStorage.getItem('mapanimator.geocoder') || undefined);
             return { features: g.features.map(f => ({ ...f, place_name: f.properties.display_name, center: f.geometry.coordinates })) };
-          } catch { return { features: [] }; }
+          } catch (err) { setStatus(err.message); return { features: [] }; }
         },
-      }, { maplibregl });
+      }, { maplibregl, showResultsWhileTyping: false, minLength: 3, placeholder: 'Buscar lugar e pressionar Enter' });
       map.current.addControl(geocoder, 'top-left');
-      setupLayers(); updateViewport();
-    });
+      updateViewport();
 
     map.current.on('click', e => {
-      if (isDrawingRef.current) { customPathCoords.current.push([e.lngLat.lng, e.lngLat.lat]); syncPathLayer(); }
+      if (isDrawingRef.current) { customPathCoords.current.push([e.lngLat.lng, e.lngLat.lat]); syncPathLayerRef.current(); }
+      else {
+        const layers = ['ma-points', 'ma-outlines', 'ma-polygons'].filter(id => map.current.getLayer(id));
+        const hit = layers.length && map.current.queryRenderedFeatures(e.point, { layers })[0];
+        if (hit) setSelectedFeature(hit.properties._maId);
+      }
     });
 
     // Native pin dragging logic (bind to icon layer)
@@ -330,7 +366,9 @@ function App() {
 
     // Live sync: when map moves, debounce-update Theatre.js props
     map.current.on('moveend', () => {
-      if (!liveSyncRef.current || !mapObj.current) return;
+      const center = map.current.getCenter();
+      setCameraView({ lng: center.wrap().lng, lat: center.lat, zoom: map.current.getZoom(), pitch: map.current.getPitch(), bearing: map.current.getBearing() });
+      if (!liveSyncRef.current || !mapObj.current || animationModeRef.current) return;
       clearTimeout(syncTimer.current);
       syncTimer.current = setTimeout(() => {
         const c = map.current.getCenter();
@@ -356,16 +394,17 @@ function App() {
       pathProgress: types.number(1, { range: [0, 1] }),
     });
 
-    mapObj.current.onValuesChange(v => {
-      if (!map.current || isRendering) return;
+    const unsubscribe = mapObj.current.onValuesChange(v => {
+      if (!map.current || animationModeRef.current) return;
       const lng = typeof v.lng === 'number' ? v.lng : map.current.getCenter().lng;
       const lat = typeof v.lat === 'number' ? v.lat : map.current.getCenter().lat;
       const zoom = typeof v.zoom === 'number' ? v.zoom : map.current.getZoom();
       const pitch = typeof v.pitch === 'number' ? v.pitch : map.current.getPitch();
       const bearing = typeof v.bearing === 'number' ? v.bearing : map.current.getBearing();
       map.current.jumpTo({ center: [lng, lat], zoom, pitch, bearing });
-      if (customPathCoords.current.length > 1) syncPathLayer(getInterpolatedPath(customPathCoords.current, v.pathProgress || 0));
+      if (customPathCoords.current.length > 1) syncPathLayerRef.current(getInterpolatedPath(customPathCoords.current, v.pathProgress || 0));
     });
+    return () => { unsubscribe(); clearTimeout(syncTimer.current); map.current?.remove(); map.current = null; };
   }, []); // eslint-disable-line
 
   /* ── Pin helpers ─────────────────────────── */
@@ -484,7 +523,7 @@ function App() {
   const addPin = async () => {
     const c = map.current.getCenter();
     const p = {
-      id: Date.now(), lng: c.lng, lat: c.lat, text: 'Pin', color: '#ec4899',
+      id: crypto.randomUUID(), lng: c.lng, lat: c.lat, text: 'Pin', color: '#ec4899',
       scale: 1.0, style: 'bubble', textScale: 1, textOffsetX: 0, textOffsetY: 0,
       textColor: '#ffffff', fontFamily: 'Inter, sans-serif', marker: null
     };
@@ -523,12 +562,18 @@ function App() {
     }
     const total = Math.ceil(duration * fps);
     const frames = [];
-    for (let i = 0; i <= total; i++) {
-      sheet.sequence.position = start + (i / fps);
+    for (let i = 0; i < total; i++) {
+      if (waypointMode && waypoints.length) seekCamera(start + i / fps);
+      else sheet.sequence.position = start + (i / fps);
       await new Promise(r => setTimeout(r, 60));
-      await new Promise(r => map.current.isMoving() ? map.current.once('idle', r) : r());
+      await new Promise((resolve, reject) => {
+        if (map.current.loaded()) { resolve(); return; }
+        const timer = setTimeout(() => { map.current.off('idle', done); reject(new Error('Tempo excedido ao carregar os tiles.')); }, 30000);
+        const done = () => { clearTimeout(timer); resolve(); };
+        map.current.once('idle', done); map.current.triggerRepaint();
+      });
       frames.push(await captureMapFrame(map.current, getResolution()));
-      setStatus(`Rendering: ${Math.round((i / total) * 100)}%`);
+      setStatus(`Rendering: ${Math.round(((i + 1) / total) * 100)}%`);
     }
     return frames;
   };
@@ -576,9 +621,86 @@ function App() {
     finally { setIsRendering(false); }
   };
 
+  const focusFeature = feature => {
+    if (!map.current) return;
+    const bounds = featureBounds(feature);
+    map.current.fitBounds(bounds, { padding: 100, maxZoom: 14, duration: 800 });
+  };
+
+  const labelFeature = async item => {
+    const b = featureBounds(item.feature);
+    const p = { id: crypto.randomUUID(), lng: (b[0][0] + b[1][0]) / 2, lat: (b[0][1] + b[1][1]) / 2,
+      text: item.name, color: item.style.color, scale: 1, style: 'bubble', textScale: 1,
+      textOffsetX: 0, textOffsetY: 0, textColor: '#ffffff', fontFamily: 'Inter, sans-serif' };
+    pinsRef.current = [...pinsRef.current, p];
+    setPins([...pinsRef.current]); await createPinMarker(p);
+    setStatus('Rótulo adicionado. Arraste o pin para ajustar a posição.');
+  };
+
+  const saveScene = () => {
+    try {
+      const c = map.current.getCenter();
+      const scene = validateScene({ format: 'MapAnimator', version: 1, name: projectName,
+        settings, pins: pinsRef.current.map(({ marker, ...pin }) => pin), features,
+        waypoints, cameraMode: waypointMode ? 'waypoints' : 'theatre', appearance,
+        route: customPathCoords.current, camera: { lng: c.wrap().lng, lat: c.lat, zoom: map.current.getZoom(), pitch: map.current.getPitch(), bearing: map.current.getBearing() },
+        theatre: studio.createContentOfSaveFile(project.address.projectId),
+      });
+      downloadJSON(`${projectName.replace(/[^\p{L}\p{N}_-]/gu, '_') || 'scene'}.mapanimator.json`, scene);
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(scene)); } catch { setStatus('Arquivo salvo. Sem espaço para a cópia local.'); return; }
+      setStatus('Projeto e timeline salvos; uma cópia local também está disponível.');
+    } catch (err) { setStatus(`Não foi possível salvar: ${err.message}`); }
+  };
+
+  const reopenScene = scene => {
+    validateScene(scene);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(scene));
+    sessionStorage.setItem(REOPEN_KEY, 'yes');
+    window.location.reload();
+  };
+
+  const openSceneFile = async e => {
+    const file = e.target.files[0]; e.target.value = '';
+    if (!file) return;
+    try {
+      if (file.size > 20 * 1024 * 1024) throw new Error('O limite do projeto é 20 MB.');
+      reopenScene(JSON.parse(await file.text()));
+    } catch (err) { setStatus(`Projeto: ${err.message}`); }
+  };
+
+  const captureCamera = () => {
+    if (!map.current) return null;
+    const c = map.current.getCenter();
+    return { lng: c.wrap().lng, lat: c.lat, zoom: map.current.getZoom(), pitch: map.current.getPitch(), bearing: map.current.getBearing(), pathProgress: 1 };
+  };
+  const seekCamera = time => {
+    const v = sampleCamera(waypoints, time); if (!v || !map.current) return;
+    map.current.jumpTo({ center: [v.lng, v.lat], zoom: v.zoom, pitch: v.pitch, bearing: v.bearing });
+    if (customPathCoords.current.length > 1) syncPathLayerRef.current(getInterpolatedPath(customPathCoords.current, v.pathProgress));
+  };
+
   /* ── Render ── */
   return (
-    <div className="app-container">
+    <div className={`app-container ${timelineVisible ? 'with-timeline' : ''}`}>
+      <header className="workspace-bar">
+        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.3.0</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
+        <input aria-label="Nome do projeto" value={projectName} onChange={e => setProjectName(e.target.value)} />
+        <button onClick={() => setBrowserVisible(v => !v)}>Elementos</button>
+        <button onClick={() => setTimelineVisible(v => !v)}>Timeline</button>
+        <button onClick={saveScene}>Salvar projeto</button>
+        <button title="Substitui a cena e recarrega a página. Salve o projeto atual primeiro." onClick={() => projectInput.current.click()}>Abrir arquivo</button>
+        <button onClick={() => { try { reopenScene(JSON.parse(localStorage.getItem(STORAGE_KEY))); } catch (err) { setStatus(`Cópia local: ${err.message}`); } }}>Reabrir local</button>
+        <input ref={projectInput} hidden type="file" accept=".json" onChange={openSceneFile} />
+      </header>
+      {timelineVisible && <CameraTimeline points={waypoints} setPoints={setWaypoints} duration={settings.exportDuration}
+        onDuration={exportDuration => setSettings(s => ({ ...s, exportDuration }))} onSeek={seekCamera} onCapture={captureCamera}
+        enabled={waypointMode} onEnabled={setWaypointMode} disabled={isRendering} onStatus={setStatus} />}
+      <div className="workspace-status" role="status">{status}</div>
+      {browserVisible && <aside className="geographic-panel">
+        <FeatureBrowser items={features} setItems={setFeatures} selected={selectedFeature} onSelect={setSelectedFeature}
+          onFocus={focusFeature} onLabel={labelFeature} onStatus={setStatus}
+          onRoute={item => { customPathCoords.current = item.feature.geometry.coordinates.map(p => [...p]); syncPathLayer(); setStatus('Rota pronta. Anime pathProgress no Studio de 0 a 1.'); }} />
+      </aside>}
       {isRendering && (
         <div className="render-overlay">
           <div>
@@ -593,7 +715,7 @@ function App() {
       </div>
 
       <FloatingPanel
-        title="Main Scene : default → Map"
+        title={`${projectName} → Map`}
         visible={panelVisible}
         onClose={() => setPanelVisible(false)}
         defaultPos={{ x: 20, y: 80 }}
@@ -628,6 +750,18 @@ function App() {
           </>
         }
       >
+        <Section title="Câmera" id="camera" collapsed={sec.camera} onToggle={toggleSec}>
+          {[['lng', 'Longitude', -180, 180], ['lat', 'Latitude', -85, 85], ['zoom', 'Zoom', 0, 24], ['pitch', 'Inclinação', 0, 85], ['bearing', 'Rotação', -180, 180]].map(([key, label, min, max]) => <div className="prop-row" key={key}>
+            <label htmlFor={`camera-${key}`}>{label}</label>
+            <input id={`camera-${key}`} type="number" step={key === 'lng' || key === 'lat' ? '0.001' : '0.1'} min={min} max={max} value={Number(cameraView[key].toFixed(4))}
+              onChange={e => {
+                if (e.target.value === '') return;
+                const v = { ...cameraView, [key]: Math.min(max, Math.max(min, Number(e.target.value))) };
+                setCameraView(v); map.current?.jumpTo({ center: [v.lng, v.lat], zoom: v.zoom, pitch: v.pitch, bearing: v.bearing });
+              }} />
+          </div>)}
+          <div className="prop-hint">Use Capture para gravar a vista no Studio.</div>
+        </Section>
         <Section title="Workspace" id="ws" collapsed={sec.ws} onToggle={toggleSec}>
           <div className="prop-row"><label>Format</label>
             <select value={settings.resolution} onChange={e => setSettings(s => ({ ...s, resolution: e.target.value }))}>
@@ -638,6 +772,7 @@ function App() {
           </div>
           <div className="prop-row"><label>Style</label>
             <select value={settings.mapStyle} onChange={e => setSettings(s => ({ ...s, mapStyle: e.target.value }))}>
+              {!['bright', 'dark', 'positron', 'liberty'].some(v => settings.mapStyle === `https://tiles.openfreemap.org/styles/${v}`) && <option value={settings.mapStyle}>Personalizado</option>}
               <option value="https://tiles.openfreemap.org/styles/bright">Bright</option>
               <option value="https://tiles.openfreemap.org/styles/dark">Dark</option>
               <option value="https://tiles.openfreemap.org/styles/positron">Positron</option>
@@ -647,6 +782,17 @@ function App() {
           <div className="prop-row"><label>FPS</label>
             <input type="number" min="10" max="60" value={settings.fps} onChange={e => setSettings(s => ({ ...s, fps: parseInt(e.target.value) }))} />
           </div>
+        </Section>
+
+        <Section title="Estilo do mapa-base" id="basemap" collapsed={sec.basemap !== false} onToggle={id => setSec(s => ({ ...s, [id]: s[id] === false }))}>
+          {[['labels', 'Rótulos do mapa'], ['roads', 'Estradas'], ['buildings', 'Edifícios']].map(([key, label]) => <div className="prop-row" key={key}><label htmlFor={`base-${key}`}>{label}</label><input id={`base-${key}`} type="checkbox" checked={appearance[key]} onChange={e => setAppearance(a => ({ ...a, [key]: e.target.checked }))} /></div>)}
+          {[['water', 'Cor da água', '#39596f'], ['land', 'Cor do fundo', '#e8e4db']].map(([key, label, fallback]) => <div className="prop-row" key={key}>
+            <label htmlFor={`color-${key}`}>{label}</label><input aria-label={`Personalizar ${label}`} type="checkbox" checked={!!appearance[key]} onChange={e => setAppearance(a => ({ ...a, [key]: e.target.checked ? fallback : null }))} />
+            <input id={`color-${key}`} type="color" value={appearance[key] || fallback} disabled={!appearance[key]} onChange={e => setAppearance(a => ({ ...a, [key]: e.target.value }))} />
+          </div>)}
+          <label className="prop-hint" htmlFor="style-url">URL HTTPS de um style.json MapLibre</label>
+          <input id="style-url" className="style-url" placeholder="https://…/style.json" value={styleURL} onChange={e => setStyleURL(e.target.value)} />
+          <button className="panel-btn" onClick={() => { try { const u = new URL(styleURL); if (u.protocol !== 'https:') throw new Error('Use uma URL HTTPS.'); setSettings(s => ({ ...s, mapStyle: u.href })); } catch (err) { setStatus(`Estilo: ${err.message}`); } }}>Aplicar estilo externo</button>
         </Section>
 
         <Section title="Drawing" id="draw" collapsed={sec.draw} onToggle={toggleSec}>
