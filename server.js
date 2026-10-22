@@ -12,7 +12,7 @@ app.get('/api/status', (req, res) => {
 });
 
 // Qualquer outra requisição retorna o index.html do React
-app.get('*', (req, res) => {
+app.get('/{*path}', (req, res) => {
   res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
 });
 
