@@ -1,5 +1,16 @@
 # Validação — 22/10/2026
 
+## v0.3.0 — validação adicional
+
+- **11 testes passaram** em duas suites: incluindo interpolação de câmera, caminho angular curto, easing, tempos duplicados, parsing CSV/TSV, campos entre aspas, coordenadas ausentes e restauração de estilos do mapa-base.
+- Build de produção concluído com os mesmos tipos de aviso do bundler e tamanho (aproximadamente 588 kB gzip no JS principal).
+- No navegador: capturadas vistas em 0 e 3 segundos, com zoom 12 e 10. Ao percorrer até 1,5 segundo, zoom 11 e longitude intermediária foram confirmados.
+- Importado o arquivo real `public/examples/cities.csv`: três pontos, colunas reconhecidas e escala por `population`; São Paulo recebeu raio 25.
+- Controles de rótulos, estradas e cor da água alterados sem erros no console. A cena foi salva e reaberta, preservando os pontos, o modo de câmera e as duas vistas.
+- O modo de vistas usa o mesmo `sampleCamera` na prévia e no exportador. A exportação animada completa deste novo modo não foi revalidada manualmente; a validação de PNG abaixo refere-se ao pipeline da primeira atualização.
+
+As adições opcionais ao schema v1 mantêm compatibilidade com projetos sem waypoints/aparência. Agrupamento de layers do basemap usa nomes e tipos das layers; estilos externos com convenções diferentes ou mapas raster podem não expor esses grupos.
+
 ## Evidências
 
 - `npm test -- --watchAll=false --runInBand --cacheDirectory=./node_modules/.cache/jest`: **6 testes passaram**. Cobertura de geometrias, coordenadas inválidas, preservação de propriedades, visibilidade, bounds, serialização de cena, rejeição de projetos inválidos e reconstrução de layers durante troca de estilo.

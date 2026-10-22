@@ -1,5 +1,15 @@
 # Map Animator V2
 
+**Current release: v0.3.0.** [Open the editor](https://pereiraregis.github.io/MapAnimator/) · [Changelog](CHANGELOG.md)
+
+### Camera timeline and map styling
+
+Use the bottom timeline to capture the current camera at 0 seconds, enter another time, move the map and capture again. Select an easing curve for each departing view and use **Reproduzir** or the scrubber to preview. **Usar vistas na exportação** sends that same animation to PNG/MP4; disable it to use the existing Theatre Studio animation. Each view also stores `pathProgress` (0–1), so route reveals can run alongside camera moves. Capturing at an existing time replaces that view.
+
+Expand **Estilo do mapa-base** to toggle map labels, roads and buildings, override water/background colors or load a custom HTTPS MapLibre style JSON. Visibility groups use layer/source names and apply best to the bundled OpenFreeMap styles; arbitrary providers may use different naming. Raster basemaps cannot expose these individual vector controls.
+
+Use **Dados CSV / TSV** to import point datasets. Confirm longitude and latitude columns, optionally select a label and numeric value for proportional marker size. Coordinates require decimal points. [Sample CSV](client/public/examples/cities.csv) is included. Imported values and styling are retained in saved projects.
+
 ## Geographic editing update
 
 The existing React + MapLibre + Theatre.js editor now includes:

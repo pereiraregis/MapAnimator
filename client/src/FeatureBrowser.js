@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { DEMO, makeItems, normalizeGeoJSON } from './geo/features';
 import { downloadJSON } from './geo/scene';
+import DataImport from './DataImport';
 
 export default function FeatureBrowser({ items, setItems, selected, onSelect, onFocus, onLabel, onRoute, onStatus }) {
   const fileInput = useRef(null);
@@ -10,6 +11,7 @@ export default function FeatureBrowser({ items, setItems, selected, onSelect, on
   const style = (key, value) => update({ style: { ...active.style, [key]: value } });
   const append = (data, name) => {
     const added = makeItems(normalizeGeoJSON(data), name);
+    if (items.length + added.length > 5000) { onStatus('Limite de 5000 elementos por projeto.'); return; }
     setItems(all => [...all, ...added]); onSelect(added[0].id); onFocus(added[0].feature);
     onStatus(`${added.length} elementos importados.`);
   };
@@ -30,6 +32,10 @@ export default function FeatureBrowser({ items, setItems, selected, onSelect, on
       <button disabled={!items.length} onClick={() => downloadJSON('mapanimator-features.geojson', { type: 'FeatureCollection', features: items.map(i => i.feature) })}>Exportar</button>
     </div>
     <input ref={fileInput} hidden type="file" accept=".geojson,.json" onChange={importFile} />
+    <DataImport onStatus={onStatus} onAdd={added => {
+      if (items.length + added.length > 5000) throw new Error('Limite de 5000 elementos por projeto.');
+      setItems(all => [...all, ...added]); onSelect(added[0].id); onFocus(added[0].feature);
+    }} />
     <input className="feature-filter" aria-label="Filtrar elementos" placeholder="Filtrar elementos…" value={query} onChange={e => setQuery(e.target.value)} />
     <div className="feature-list">
       {!items.length && <div className="feature-empty">Nenhum elemento. Abra o exemplo ou importe um GeoJSON WGS84.</div>}

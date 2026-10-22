@@ -2,6 +2,12 @@
 
 Pesquisa em 22/10/2026. Base analisada: branch `main` de `pereiraregis/MapAnimator`. A branch padrão do remoto é `gh-pages`; ela contém a publicação, não o ambiente de desenvolvimento completo.
 
+### Atualização v0.3.0
+
+A etapa seguinte já acrescenta timeline própria de vistas com easing, scrubbing e reprodução; importação de CSV/TSV com mapeamento explícito de colunas e tamanho por valor; edição de visibilidade/cor do mapa-base; e URLs HTTPS de estilos externos. O comparativo abaixo registra a primeira entrega; esses itens deixam de ser apenas planejamento. A interpolação de longitude/bearing escolhe o caminho angular curto, sem equivaler a uma câmera geodésica completa ou a rotas viárias.
+
+O parser considera campos entre aspas, aspas escapadas e quebras de linha conforme a [referência CSV RFC 4180](https://www.rfc-editor.org/rfc/rfc4180/). Os controles cartográficos usam a [especificação de layers MapLibre](https://maplibre.org/maplibre-style-spec/layers/).
+
 ## Objetivo e abordagem
 
 Aproximar o fluxo de criação e a capacidade de mapas animados usando React, MapLibre GL JS 4.7 e Theatre.js já presentes no projeto. O produto de referência funciona dentro do After Effects; o MapAnimator atual é uma aplicação web. Paridade de câmera no navegador não significa paridade de camadas nativas no AE. Esta implementação é independente e não utiliza código ou assets do produto comercial.

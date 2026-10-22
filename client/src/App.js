@@ -9,6 +9,9 @@ import { getProject, types } from '@theatre/core';
 import studio from '@theatre/studio';
 import JSZip from 'jszip';
 import FeatureBrowser from './FeatureBrowser';
+import CameraTimeline from './CameraTimeline';
+import { sampleCamera } from './geo/animation';
+import { BASEMAP_DEFAULTS, isBasemapLayer, applyBasemap } from './geo/basemap';
 import { featureBounds } from './geo/features';
 import { syncFeatureLayers } from './geo/layers';
 import { geocode } from './geo/geocoding';
@@ -142,6 +145,13 @@ function App() {
   const [browserVisible, setBrowserVisible] = useState(true);
   const [projectName, setProjectName] = useState(reopenedScene?.name || 'Main Scene');
   const [cameraView, setCameraView] = useState(reopenedScene?.camera || { lng: -46.633, lat: -23.550, zoom: 12, pitch: 0, bearing: 0 });
+  const [waypoints, setWaypoints] = useState(reopenedScene?.waypoints || []);
+  const [waypointMode, setWaypointMode] = useState(reopenedScene?.cameraMode === 'waypoints');
+  const [timelineVisible, setTimelineVisible] = useState(true);
+  const [appearance, setAppearance] = useState(reopenedScene?.appearance || { ...BASEMAP_DEFAULTS });
+  const [styleURL, setStyleURL] = useState('');
+  const basemapOriginals = useRef([]), appearanceRef = useRef(appearance), animationModeRef = useRef(false);
+  appearanceRef.current = appearance; animationModeRef.current = waypointMode && waypoints.length > 0;
   const projectInput = useRef(null), featuresRef = useRef(features);
   const setupLayersRef = useRef(null);
   const syncPathLayerRef = useRef(null);
@@ -276,6 +286,7 @@ function App() {
 
   useEffect(() => { syncPathLayer(); }, [syncPathLayer]);
   useEffect(() => { syncFeatureLayers(map.current, features); }, [features]);
+  useEffect(() => { applyBasemap(map.current, basemapOriginals.current, appearance); }, [appearance]);
 
   useEffect(() => {
     if (map.current) return;
@@ -287,6 +298,8 @@ function App() {
     });
 
     map.current.on('style.load', () => {
+      basemapOriginals.current = map.current.getStyle().layers.filter(isBasemapLayer);
+      applyBasemap(map.current, basemapOriginals.current, appearanceRef.current);
       setupLayersRef.current();
       syncFeatureLayers(map.current, featuresRef.current, true);
       pinsRef.current.forEach(pin => createPinMarker(pin));
@@ -355,7 +368,7 @@ function App() {
     map.current.on('moveend', () => {
       const center = map.current.getCenter();
       setCameraView({ lng: center.wrap().lng, lat: center.lat, zoom: map.current.getZoom(), pitch: map.current.getPitch(), bearing: map.current.getBearing() });
-      if (!liveSyncRef.current || !mapObj.current) return;
+      if (!liveSyncRef.current || !mapObj.current || animationModeRef.current) return;
       clearTimeout(syncTimer.current);
       syncTimer.current = setTimeout(() => {
         const c = map.current.getCenter();
@@ -382,7 +395,7 @@ function App() {
     });
 
     const unsubscribe = mapObj.current.onValuesChange(v => {
-      if (!map.current || isRendering) return;
+      if (!map.current || animationModeRef.current) return;
       const lng = typeof v.lng === 'number' ? v.lng : map.current.getCenter().lng;
       const lat = typeof v.lat === 'number' ? v.lat : map.current.getCenter().lat;
       const zoom = typeof v.zoom === 'number' ? v.zoom : map.current.getZoom();
@@ -550,7 +563,8 @@ function App() {
     const total = Math.ceil(duration * fps);
     const frames = [];
     for (let i = 0; i < total; i++) {
-      sheet.sequence.position = start + (i / fps);
+      if (waypointMode && waypoints.length) seekCamera(start + i / fps);
+      else sheet.sequence.position = start + (i / fps);
       await new Promise(r => setTimeout(r, 60));
       await new Promise((resolve, reject) => {
         if (map.current.loaded()) { resolve(); return; }
@@ -628,6 +642,7 @@ function App() {
       const c = map.current.getCenter();
       const scene = validateScene({ format: 'MapAnimator', version: 1, name: projectName,
         settings, pins: pinsRef.current.map(({ marker, ...pin }) => pin), features,
+        waypoints, cameraMode: waypointMode ? 'waypoints' : 'theatre', appearance,
         route: customPathCoords.current, camera: { lng: c.wrap().lng, lat: c.lat, zoom: map.current.getZoom(), pitch: map.current.getPitch(), bearing: map.current.getBearing() },
         theatre: studio.createContentOfSaveFile(project.address.projectId),
       });
@@ -653,18 +668,33 @@ function App() {
     } catch (err) { setStatus(`Projeto: ${err.message}`); }
   };
 
+  const captureCamera = () => {
+    if (!map.current) return null;
+    const c = map.current.getCenter();
+    return { lng: c.wrap().lng, lat: c.lat, zoom: map.current.getZoom(), pitch: map.current.getPitch(), bearing: map.current.getBearing(), pathProgress: 1 };
+  };
+  const seekCamera = time => {
+    const v = sampleCamera(waypoints, time); if (!v || !map.current) return;
+    map.current.jumpTo({ center: [v.lng, v.lat], zoom: v.zoom, pitch: v.pitch, bearing: v.bearing });
+    if (customPathCoords.current.length > 1) syncPathLayerRef.current(getInterpolatedPath(customPathCoords.current, v.pathProgress));
+  };
+
   /* ── Render ── */
   return (
-    <div className="app-container">
+    <div className={`app-container ${timelineVisible ? 'with-timeline' : ''}`}>
       <header className="workspace-bar">
-        <div className="workspace-brand"><strong>MAP ANIMATOR</strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
+        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.3.0</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
         <input aria-label="Nome do projeto" value={projectName} onChange={e => setProjectName(e.target.value)} />
         <button onClick={() => setBrowserVisible(v => !v)}>Elementos</button>
+        <button onClick={() => setTimelineVisible(v => !v)}>Timeline</button>
         <button onClick={saveScene}>Salvar projeto</button>
         <button title="Substitui a cena e recarrega a página. Salve o projeto atual primeiro." onClick={() => projectInput.current.click()}>Abrir arquivo</button>
         <button onClick={() => { try { reopenScene(JSON.parse(localStorage.getItem(STORAGE_KEY))); } catch (err) { setStatus(`Cópia local: ${err.message}`); } }}>Reabrir local</button>
         <input ref={projectInput} hidden type="file" accept=".json" onChange={openSceneFile} />
       </header>
+      {timelineVisible && <CameraTimeline points={waypoints} setPoints={setWaypoints} duration={settings.exportDuration}
+        onDuration={exportDuration => setSettings(s => ({ ...s, exportDuration }))} onSeek={seekCamera} onCapture={captureCamera}
+        enabled={waypointMode} onEnabled={setWaypointMode} disabled={isRendering} onStatus={setStatus} />}
       <div className="workspace-status" role="status">{status}</div>
       {browserVisible && <aside className="geographic-panel">
         <FeatureBrowser items={features} setItems={setFeatures} selected={selectedFeature} onSelect={setSelectedFeature}
@@ -742,6 +772,7 @@ function App() {
           </div>
           <div className="prop-row"><label>Style</label>
             <select value={settings.mapStyle} onChange={e => setSettings(s => ({ ...s, mapStyle: e.target.value }))}>
+              {!['bright', 'dark', 'positron', 'liberty'].some(v => settings.mapStyle === `https://tiles.openfreemap.org/styles/${v}`) && <option value={settings.mapStyle}>Personalizado</option>}
               <option value="https://tiles.openfreemap.org/styles/bright">Bright</option>
               <option value="https://tiles.openfreemap.org/styles/dark">Dark</option>
               <option value="https://tiles.openfreemap.org/styles/positron">Positron</option>
@@ -751,6 +782,17 @@ function App() {
           <div className="prop-row"><label>FPS</label>
             <input type="number" min="10" max="60" value={settings.fps} onChange={e => setSettings(s => ({ ...s, fps: parseInt(e.target.value) }))} />
           </div>
+        </Section>
+
+        <Section title="Estilo do mapa-base" id="basemap" collapsed={sec.basemap !== false} onToggle={id => setSec(s => ({ ...s, [id]: s[id] === false }))}>
+          {[['labels', 'Rótulos do mapa'], ['roads', 'Estradas'], ['buildings', 'Edifícios']].map(([key, label]) => <div className="prop-row" key={key}><label htmlFor={`base-${key}`}>{label}</label><input id={`base-${key}`} type="checkbox" checked={appearance[key]} onChange={e => setAppearance(a => ({ ...a, [key]: e.target.checked }))} /></div>)}
+          {[['water', 'Cor da água', '#39596f'], ['land', 'Cor do fundo', '#e8e4db']].map(([key, label, fallback]) => <div className="prop-row" key={key}>
+            <label htmlFor={`color-${key}`}>{label}</label><input aria-label={`Personalizar ${label}`} type="checkbox" checked={!!appearance[key]} onChange={e => setAppearance(a => ({ ...a, [key]: e.target.checked ? fallback : null }))} />
+            <input id={`color-${key}`} type="color" value={appearance[key] || fallback} disabled={!appearance[key]} onChange={e => setAppearance(a => ({ ...a, [key]: e.target.value }))} />
+          </div>)}
+          <label className="prop-hint" htmlFor="style-url">URL HTTPS de um style.json MapLibre</label>
+          <input id="style-url" className="style-url" placeholder="https://…/style.json" value={styleURL} onChange={e => setStyleURL(e.target.value)} />
+          <button className="panel-btn" onClick={() => { try { const u = new URL(styleURL); if (u.protocol !== 'https:') throw new Error('Use uma URL HTTPS.'); setSettings(s => ({ ...s, mapStyle: u.href })); } catch (err) { setStatus(`Estilo: ${err.message}`); } }}>Aplicar estilo externo</button>
         </Section>
 
         <Section title="Drawing" id="draw" collapsed={sec.draw} onToggle={toggleSec}>

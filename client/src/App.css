@@ -88,6 +88,29 @@ html {
 .feature-inspector .feature-actions { margin: 14px 0; }
 .feature-inspector pre { white-space: pre-wrap; overflow-wrap: anywhere; color: #98acba; max-height: 160px; overflow: auto; }
 button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid #4fc3d4; outline-offset: 2px; }
+.version-badge { color: #4fc3d4; font-size: 9px; letter-spacing: 0; }
+.camera-timeline { position: fixed; left: 0; right: 0; bottom: 0; height: 190px; z-index: 1502; padding: 12px 20px; background: #151e28; border-top: 1px solid #415467; font-size: 11px; color: #a5bacb; }
+.timeline-top { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.timeline-top strong { letter-spacing: 1.5px; color: #a4e4eb; }
+.timeline-transport { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+.camera-timeline button, .camera-timeline select { background: #273847; color: #d7e5ef; border: 1px solid #415467; border-radius: 4px; padding: 6px 10px; cursor: pointer; font: inherit; }
+.camera-timeline button:disabled { opacity: .4; cursor: default; }
+.camera-timeline input[type=number] { width: 60px; background: #0e1822; color: #a4e4eb; border: 1px solid #354d61; padding: 5px; border-radius: 3px; }
+.timeline-scrubber { width: 100%; accent-color: #4fc3d4; }
+.waypoint-list { display: flex; gap: 8px; overflow: auto; padding-top: 6px; }
+.waypoint { display: flex; gap: 4px; align-items: center; padding: 4px; background: #202c38; border-radius: 4px; flex-shrink: 0; }
+.waypoint input[type=number] { width: 44px; }
+.waypoint-list p { margin: 6px 0; color: #8b9eaf; }
+.with-timeline .map-viewport { height: calc(100% - 248px); }
+.with-timeline .geographic-panel { max-height: calc(100vh - 300px); }
+.with-timeline .floating-panel { max-height: calc(100vh - 300px); }
+.with-timeline .workspace-status { bottom: 198px; }
+.data-import { padding: 0 12px 12px; }
+.data-import > button { width: 100%; }
+.data-import .feature-inspector { padding: 4px 0; }
+.data-import select { max-width: 140px; background: #142232; color: #c4d6e4; padding: 6px; border: 1px solid #415467; }
+.style-url { width: 100%; margin: 6px 0; background: #15202b; color: #b8cddd; border: 1px solid #415467; padding: 6px; font-size: 10px; }
+@media (max-width: 900px) { .camera-timeline { height: 210px; padding: 10px; } .with-timeline .map-viewport { height: calc(100% - 268px); } .with-timeline .workspace-status { bottom: 218px; } .with-timeline .geographic-panel, .with-timeline .floating-panel { max-height: calc(100vh - 335px); } .timeline-top { flex-wrap: wrap; gap: 5px; } }
 @media (max-width: 900px) { .workspace-brand small { display: none; } .workspace-bar { gap: 4px; padding: 10px; flex-wrap: wrap; } .workspace-brand { font-size: 10px; } .workspace-bar input:not([hidden]) { width: 90px; } .geographic-panel { right: 8px; width: 265px; top: 112px; } }
 
 /* Side toggle button */
