@@ -1,3 +1,5 @@
+> v0.7.0 update: the active timeline now uses actual vendored EffectCraft Rust modules and an egui/WASM panel. The document below describes the earlier React adaptation. See [RUST_MIGRATION.md](RUST_MIGRATION.md) for the current architecture and limitations.
+
 # EffectCraft timeline reference — MapAnimator v0.6.0
 
 Reviewed upstream revision: [`357b4c5bd531f9032ad6dc02937dcc75ab293ee9`](https://github.com/storytold/effectcraft/tree/357b4c5bd531f9032ad6dc02937dcc75ab293ee9), accessed 2026-10-23. EffectCraft uses Rust/egui; MapAnimator retains React, MapLibre and its existing scene/export pipeline.

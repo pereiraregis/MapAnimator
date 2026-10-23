@@ -255,3 +255,11 @@ kbd { display:inline-block; font:10px ui-monospace,monospace; padding:3px 5px; b
 .key-context-menu button { text-align:left; background:transparent; border:0; font-size:10px; padding:6px 8px; }
 .key-context-menu button:hover { background:#355363; }
 @media(max-width:900px) { .track-workspace:has(.key-inspector),.track-workspace.with-inspector { grid-template-columns:minmax(0,1fr); } .key-inspector { max-width:420px; } .track-filter { margin-left:0; } .track-ruler-row,.property-track { grid-template-columns:112px minmax(0,1fr); } .property-track-label button:last-child { font-size:8px; } }
+.rust-timeline { grid-area:timeline; position:relative; min-height:0; padding:12px 8px 0; display:flex; flex-direction:column; background:#20242a; border-top:1px solid #425563; overflow:hidden; }
+.rust-timeline.is-hidden { display:none; }
+.rust-timeline-status { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:4px; font-size:10px; min-height:26px; }
+.rust-timeline-status span { color:#91adbf; flex:1; }
+.rust-timeline-status button { font-size:10px; padding:3px 7px; }
+.rust-canvas-host { position:relative; flex:1; min-height:0; width:100%; }
+.rust-canvas-host canvas { width:100%; height:100%; display:block; touch-action:none; }
+.rust-timeline-error { color:#ffc29e; display:flex; gap:12px; padding:6px; font-size:11px; }

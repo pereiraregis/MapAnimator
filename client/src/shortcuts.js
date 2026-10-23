@@ -23,6 +23,7 @@ export function shortcutAction(event) {
     if (event.repeat || event.shiftKey) return null;
     return key.toLowerCase() === 's' ? 'save' : key.toLowerCase() === 'o' ? 'open' : null;
   }
+  if (event.target?.closest?.('[data-rust-timeline]')) return null;
   if (event.target?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="slider"]')) return null;
   if (event.target?.closest?.('[data-timeline]') && ['ArrowLeft', 'ArrowRight', 'Escape'].includes(key)) return null;
   if (event.target?.closest?.('[data-keyframe], [role="separator"]') && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(key)) return null;

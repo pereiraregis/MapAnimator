@@ -9,7 +9,8 @@ import { getProject, types, onChange } from '@theatre/core';
 import studio from '@theatre/studio';
 import JSZip from 'jszip';
 import FeatureBrowser from './FeatureBrowser';
-import CameraTimeline from './CameraTimeline';
+import RustTimeline from './RustTimeline';
+import { loadRustTimeline } from './rust/runtime';
 import RouteEditor from './RouteEditor';
 import useRouteEditor from './useRouteEditor';
 import { animateRouteViews } from './geo/route';
@@ -104,7 +105,7 @@ function App() {
   useEffect(() => onChange(sheet.sequence.pointer.position, setNativeTime), []);
   const [waypointMode, setWaypointMode] = useState(reopenedScene ? reopenedScene.cameraMode === 'waypoints' : true);
   const [timelineVisible, setTimelineVisible] = useState(true);
-  const [timelineHeight, setTimelineHeight] = useState(360);
+  const [timelineHeight, setTimelineHeight] = useState(440);
   const [appearance, setAppearance] = useState(reopenedScene?.appearance || { ...BASEMAP_DEFAULTS });
   const [styleURL, setStyleURL] = useState('');
   const basemapOriginals = useRef([]), appearanceRef = useRef(appearance), animationModeRef = useRef(false);
@@ -420,6 +421,7 @@ function App() {
   const getResolution = () => settings.resolution.split('x').map(Number);
 
   const collectFrames = async (fps) => {
+    if (waypointMode && waypoints.length) await loadRustTimeline();
     // If the user specifies an export duration, use it! Otherwise fallback.
     const duration = settings.exportDuration > 0 ? settings.exportDuration : (sheet.sequence.length > 0 ? sheet.sequence.length : 10);
     const start = 0;
@@ -600,8 +602,8 @@ function App() {
     animateRoute();
     setStatus('Rota importada e revelação pronta. Use Espaço para reproduzir ou Editar pontos para ajustar. A linha original foi ocultada.');
   };
-  const seekCamera = time => {
-    const v = sampleCamera(waypoints, time); if (!v || !map.current) return;
+  const seekCamera = (time, rustValues) => {
+    const v = rustValues ? Object.fromEntries(['lng', 'lat', 'zoom', 'pitch', 'bearing', 'pathProgress'].map((name, i) => [name, rustValues[i]])) : sampleCamera(waypoints, time); if (!v || !map.current) return;
     map.current.jumpTo({ center: [v.lng, v.lat], zoom: v.zoom, pitch: v.pitch, bearing: v.bearing });
     routeEditorRef.current.setProgress(v.pathProgress);
   };
@@ -649,9 +651,9 @@ function App() {
 
   /* ── Render ── */
   return (
-    <div className={`app-container ${timelineVisible ? 'with-timeline' : ''}`} style={{ '--left-width': panelVisible ? 'var(--panel-left-size)' : '0px', '--right-width': browserVisible ? 'var(--panel-right-size)' : '0px', '--timeline-height': timelineVisible ? `min(65vh, ${timelineHeight}px)` : '0px' }}>
+    <div className={`app-container ${timelineVisible ? 'with-timeline' : ''}`} style={{ '--left-width': panelVisible ? 'var(--panel-left-size)' : '0px', '--right-width': browserVisible ? 'var(--panel-right-size)' : '0px', '--timeline-height': timelineVisible ? `min(75vh, ${timelineHeight}px)` : '0px' }}>
       <header className="workspace-bar">
-        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.6.0</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
+        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.7.0</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
         <input aria-label="Nome do projeto" value={projectName} onChange={e => setProjectName(e.target.value)} />
         <nav className="workspace-navigation" aria-label="Áreas do editor">
           <button title="Controles (1)" aria-pressed={compact ? mobilePane === 'controls' : panelVisible} onClick={() => activatePane('controls')}>Controles</button>
@@ -666,7 +668,7 @@ function App() {
         <input ref={projectInput} hidden type="file" accept=".json" onChange={openSceneFile} />
       </header>
       {nativeStudio && <div className="native-studio-bar"><strong>THEATRE.JS · EDITOR NATIVO</strong><span>Map → propriedades sequenciadas · Clique no segmento para Tween ou no ícone da track para curvas. Salvar preserva as edições.</span><button onClick={saveScene}>Salvar</button><button onClick={closeTheatre}>Fechar Studio</button></div>}
-      <CameraTimeline ref={timelineRef} visible={timelineVisible} fps={settings.fps} points={waypoints} setPoints={setWaypoints} duration={settings.exportDuration}
+      <RustTimeline ref={timelineRef} visible={timelineVisible} fps={settings.fps} points={waypoints} setPoints={setWaypoints} duration={settings.exportDuration}
         onDuration={exportDuration => setSettings(s => ({ ...s, exportDuration }))} onSeek={seekCamera} onCapture={captureCamera}
         onResize={setTimelineHeight} onTheatre={showTheatre} nativeSeek={nativeSeek} nativePlay={nativePlay} nativePause={nativePause} nativeTime={nativeTime} nativePlaying={nativePlaying} enabled={waypointMode} onEnabled={value => { nativePause(); setWaypointMode(value); }} disabled={isRendering} onStatus={setStatus} />
       <footer className="workspace-status"><span role="status">{status}</span><div ref={creditsContainer} className="map-credits" aria-label="Créditos do mapa" /><span className="status-hint">Espaço · Play/Pause <span>◇ K · Capturar</span> <span>? · Atalhos</span></span></footer>

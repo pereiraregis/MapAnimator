@@ -1,0 +1,71 @@
+{
+  "repository": "https://github.com/storytold/effectcraft",
+  "revision": "357b4c5bd531f9032ad6dc02937dcc75ab293ee9",
+  "license": "MIT",
+  "files": [
+    {
+      "path": "LICENSE-MIT",
+      "gitBlob": "633fe3051018fd6d2d94f45ea2ea63d99801f922"
+    },
+    {
+      "path": "crates/color/Cargo.toml",
+      "gitBlob": "c30e33b501d104ed5cba3219874c17a0b175d07d"
+    },
+    {
+      "path": "crates/color/src/blend.rs",
+      "gitBlob": "0fecf4e9c38bdbe8aef7b7476c3925a501c939f1"
+    },
+    {
+      "path": "crates/color/src/icc.rs",
+      "gitBlob": "184c94c28b485a77a971fd104bd012b1dec25eb3"
+    },
+    {
+      "path": "crates/color/src/lib.rs",
+      "gitBlob": "5545f390d2cc593e406d9ed99727c21a5b14c530"
+    },
+    {
+      "path": "crates/color/src/space.rs",
+      "gitBlob": "ee7590ecaecd7987d21243df0c9a9bdc1fcc7149"
+    },
+    {
+      "path": "crates/geom/Cargo.toml",
+      "gitBlob": "20eb3860b192954b16222b4477f9af8e4939679b"
+    },
+    {
+      "path": "crates/geom/src/lib.rs",
+      "gitBlob": "a03c9d46c658d0acae6dfe8ea6f83fe46f1a6e72"
+    },
+    {
+      "path": "crates/keyframe/Cargo.toml",
+      "gitBlob": "e9cc257fda4f670fdc9d0701399913caa6426b7f"
+    },
+    {
+      "path": "crates/keyframe/src/lib.rs",
+      "gitBlob": "e0ee137bac8bd09398b2da13790ec47a028aaabc"
+    },
+    {
+      "path": "crates/keyframe/src/text_doc.rs",
+      "gitBlob": "6c1e5b8433d67b4b159b944fa1ce75d95bc6f482"
+    },
+    {
+      "path": "crates/keyframe/src/value.rs",
+      "gitBlob": "6609aed6824cb7128eb32c814c4eb8a58e2aa593"
+    },
+    {
+      "path": "crates/keyframe/tests/feather_remove.rs",
+      "gitBlob": "06836bbf6ee0724deb33be61d287a5d0943f0e7a"
+    },
+    {
+      "path": "crates/time/Cargo.toml",
+      "gitBlob": "bc6304805f969f4dece117a0a02bcced9095719f"
+    },
+    {
+      "path": "crates/time/src/lib.rs",
+      "gitBlob": "7a64a82bb147fd3c0073a6ae7264e44f3a82a648"
+    },
+    {
+      "path": "crates/time/tests/relative_min_cancellation.rs",
+      "gitBlob": "9e63f1ba496fb153285f4b5ea33b37a49b5047bc"
+    }
+  ]
+}

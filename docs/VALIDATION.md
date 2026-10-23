@@ -1,3 +1,13 @@
+## v0.7.0 — 23/10/2026 — migração Rust, etapa 1
+
+- **70 testes Rust passaram**: 37 do módulo upstream de keyframes, 20 de tempo, nove do estado/compatibilidade MapAnimator e quatro de interações egui. Execução final com Cargo.lock: `cargo test --manifest-path rust/Cargo.toml -p mapanimator-core -p mapanimator-web -p effectcraft-keyframe -p effectcraft-time --lib --locked`.
+- **60 testes JavaScript passaram em dez suites**, incluindo ponte React/WASM simulada: eventos de edição/amostragem, captura usando câmera real fornecida pelo callback, ativação do modo, atualização externa sem apagar o histórico de alterações próprias e isolamento dos atalhos do canvas. Suites anteriores de rota/pins continuam passando.
+- Interações egui reais em contexto headless com eventos de ponteiro/teclado: arraste em vários movimentos, seleção por retângulo entre tracks, exclusão/undo, F9/undo e alça temporal alterando velocidade em um único undo. O teste revelou e corrigiu um erro de delta incremental: o arraste agora usa a posição original do ponteiro. Isso não equivale a testar WebGL/DOM no navegador.
+- Teste de **WebAssembly compilado executado em Node**: 91 amostras de frame, valores de câmera/revelação, passagem pelo antimeridiano, curva nativa de saída e rejeição de entrada inválida. SHA256 do binário: `d65b3fa6ed779da39f02107717bba362c5df05692cfeba3581da7b94516d9e88`. Binário: 8.473.190 bytes (2.362.189 bytes gzip); o JS de bindings tem 80.279 bytes.
+- Build de produção concluído: `main.6756efb7.js` (598,18 kB gzip), `main.581e7bb2.css` (15,63 kB gzip). Permanecem avisos existentes de dependência dinâmica, tamanho do bundle e Browserslist antigo. Licenças das dependências Rust/fontes acompanham o site; os 15 arquivos vendorizados conferem com os Git blobs upstream.
+- Tentativa de abrir navegador/CUA voltou a falhar no inicializador do volume E: (`os error 1393`, estrutura do disco ilegível). Aparência final, WebGL, clipboard real, toque, responsividade e PNG/MP4 não foram verificados visualmente. Sem captura de tela nova ou alegação de teste visual.
+- O mapa/rotas/pins continuam em JS; a timeline ativa, comandos e avaliação estão em Rust/egui/WASM. Exportação aguarda o motor e usa o mesmo sampler. Tauri e o exportador JSX para After Effects não foram implementados; a viabilidade e os limites estão documentados em `docs/RUST_MIGRATION.md` e `docs/AFTER_EFFECTS_EXPORT.md`.
+
 ## v0.6.0 — 23/10/2026
 
 - **57 testes passaram em nove suites** na execução final: `npm test --prefix client -- --watchAll=false --runInBand --cacheDirectory=./node_modules/.cache/jest`.
