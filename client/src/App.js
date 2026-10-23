@@ -104,7 +104,7 @@ function App() {
   useEffect(() => onChange(sheet.sequence.pointer.position, setNativeTime), []);
   const [waypointMode, setWaypointMode] = useState(reopenedScene ? reopenedScene.cameraMode === 'waypoints' : true);
   const [timelineVisible, setTimelineVisible] = useState(true);
-  const [timelineHeight, setTimelineHeight] = useState(284);
+  const [timelineHeight, setTimelineHeight] = useState(360);
   const [appearance, setAppearance] = useState(reopenedScene?.appearance || { ...BASEMAP_DEFAULTS });
   const [styleURL, setStyleURL] = useState('');
   const basemapOriginals = useRef([]), appearanceRef = useRef(appearance), animationModeRef = useRef(false);
@@ -651,7 +651,7 @@ function App() {
   return (
     <div className={`app-container ${timelineVisible ? 'with-timeline' : ''}`} style={{ '--left-width': panelVisible ? 'var(--panel-left-size)' : '0px', '--right-width': browserVisible ? 'var(--panel-right-size)' : '0px', '--timeline-height': timelineVisible ? `min(65vh, ${timelineHeight}px)` : '0px' }}>
       <header className="workspace-bar">
-        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.5.1</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
+        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.6.0</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
         <input aria-label="Nome do projeto" value={projectName} onChange={e => setProjectName(e.target.value)} />
         <nav className="workspace-navigation" aria-label="Áreas do editor">
           <button title="Controles (1)" aria-pressed={compact ? mobilePane === 'controls' : panelVisible} onClick={() => activatePane('controls')}>Controles</button>

@@ -8,6 +8,12 @@ export const SHORTCUTS = [
   ['T', 'Mostrar / ocultar timeline'], ['G', 'Abrir / fechar editor de curvas'], ['\\', 'Modo foco: recolher laterais'],
   ['1 / 2 / 3', 'Controles / mapa / elementos'], ['?', 'Mostrar atalhos'],
   ['Esc', 'Pausar, sair do desenho e fechar ajuda'],
+  ['Shift + clique / retângulo', 'Na timeline: selecionar vários keyframes'],
+  ['Ctrl/⌘ + A / C / V / D', 'Na timeline: selecionar tudo / copiar / colar / duplicar'],
+  ['Ctrl/⌘ + Z / Shift + Z', 'Na timeline: desfazer / refazer (mantenha Ctrl/⌘)'],
+  ['Delete / Backspace', 'Na timeline: excluir keyframes selecionados'],
+  ['F9 / Shift + F9', 'Na timeline: Easy Ease / Ease In'],
+  ['Ctrl/⌘ + Shift + F9', 'Na timeline: Ease Out'],
 ];
 
 export function shortcutAction(event) {
@@ -18,6 +24,7 @@ export function shortcutAction(event) {
     return key.toLowerCase() === 's' ? 'save' : key.toLowerCase() === 'o' ? 'open' : null;
   }
   if (event.target?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="slider"]')) return null;
+  if (event.target?.closest?.('[data-timeline]') && ['ArrowLeft', 'ArrowRight', 'Escape'].includes(key)) return null;
   if (event.target?.closest?.('[data-keyframe], [role="separator"]') && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(key)) return null;
   if (event.repeat && !['ArrowLeft', 'ArrowRight'].includes(key)) return null;
   if (key === 'ArrowLeft') return event.shiftKey ? 'backTen' : 'back';

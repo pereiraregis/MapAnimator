@@ -1,3 +1,12 @@
+## v0.6.0 — 23/10/2026
+
+- **57 testes passaram em nove suites** na execução final: `npm test --prefix client -- --watchAll=false --runInBand --cacheDirectory=./node_modules/.cache/jest`.
+- Build final de produção concluído: `main.b44e7537.js` (604,49 kB gzip), `main.4ba53bd0.css` (15,51 kB gzip). Permanecem avisos existentes de dependências dinâmicas, tamanho do bundle e dados antigos do Browserslist; sem falha de compilação.
+- Lógica: equivalência de amostragem de cenas antigas após conversão, retiming independente, identidade estável, colisões atômicas, snap magnético, copiar/colar relativo com substituição no destino e limites, validação de curvas/canais, captura de uma propriedade e preparação de rota preservando as outras, conversão Theatre por propriedade, congelamento de propriedades sem keys e Easy Ease de entrada/saída.
+- Interações React: arraste em vários movimentos preservando outras tracks e gerando um único undo; eventos copy/paste; seleção por retângulo entre propriedades; exclusão/desfazer; F9; contexto Hold; gráficos de valor/velocidade; alças Bézier e redimensionamento da timeline. Eventos/geometria do DOM são simulados nestes testes.
+- Navegador/CUA não iniciou: inicializador falhou ao enumerar o volume E: com erro de estrutura do disco ilegível (`os error 1393`). Não houve validação visual final dos gestos reais, WebGL, layout responsivo ou PNG/MP4 nesta versão. A build e os testes não equivalem a essas verificações.
+- Prévia/exportação compartilham o sampler por propriedade. Área de prévia/loop não corta a exportação; o modo Theatre continua separado. Detalhes da adaptação e diferenças: `docs/EFFECTCRAFT_REFERENCE.md`.
+
 ## v0.5.1 — 23/10/2026
 
 - Build final concluído: main.53b2c446.js, cerca de 600,27 kB gzip; avisos existentes de dependências dinâmicas e tamanho do bundle.

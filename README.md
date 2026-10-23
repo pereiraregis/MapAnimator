@@ -1,6 +1,18 @@
 # Map Animator V2
 
-**Current release: v0.5.1.** [Open the editor](https://pereiraregis.github.io/MapAnimator/) · [Changelog](CHANGELOG.md)
+**Current release: v0.6.0.** [Open the editor](https://pereiraregis.github.io/MapAnimator/) · [Changelog](CHANGELOG.md)
+
+### Property timeline inspired by EffectCraft (v0.6.0)
+
+The docked timeline now has independent **Longitude, Latitude, Zoom, Inclinação, Rotação and Revelação da rota** tracks. **K / Capturar vista** keys all six; the diamond beside a property keys only that property at the playhead. Moving a zoom key no longer moves the camera-position or route keys. Existing scenes retain their animation and appear as six aligned tracks.
+
+- Click a key to select it, Shift-click to toggle selection, or drag a rectangle through empty lanes. Click a property name to select its keys. Drag selected keys together; arrows nudge by a frame (Shift: ten frames). One drag creates one undo step. The magnet snaps to the playhead, other keys and timeline bounds within eight screen pixels; Shift enables snapping while dragging even with the magnet off. Same-property collisions are rejected.
+- With focus in the timeline, use **Ctrl/Cmd+C / V** to copy/paste at the playhead, preserving relative timing. Buttons provide an internal clipboard too. Paste replaces existing keys at the same property/time; undo restores them. **Ctrl/Cmd+D** duplicates at the playhead, **Ctrl/Cmd+A** selects all, **Delete** removes, and **Ctrl/Cmd+Z / Shift+Ctrl/Cmd+Z** undo/redo. Clipboard data can be transferred between MapAnimator tabs.
+- Double-click a key to edit its value. The inspector edits value, time and interpolation. **F9** applies Easy Ease to both sides of selected keys, **Shift+F9** to the incoming side and **Ctrl/Cmd+Shift+F9** to the outgoing side. Incoming easing changes the previous key's outgoing segment. A previous Hold segment remains Hold. The context menu exposes copy/paste, easing, Linear, Bézier, Hold and deletion.
+- Press **G** for docked Bézier handles and numerical controls for the selected property's outgoing segment. **Valor / Velocidade** display the sampled property value or absolute speed per second. The last key has no outgoing curve. Preview and export share the per-property sampler. Horizontal zoom stays anchored at the playhead.
+- **Área de prévia → De / Até / Loop** limits local playback. This session-only preview range does not trim exports: PNG/MP4 still use the full export duration. Theatre mode retains its own transport; converting to Theatre creates independent native tracks.
+
+Implementation and pinned upstream references: [EffectCraft adaptation](docs/EFFECTCRAFT_REFERENCE.md). This adapts its keyframe workflow to the existing React/MapLibre project; it does not implement EffectCraft's full compositor. Bézier handles remain normalized to 0–1; spatial paths, roving/auto tangents and an independent incoming/outgoing velocity dialog are not included. The timeline supports up to 500 distinct keyed times (up to 3,000 scalar keys). [Validation and current limits](docs/VALIDATION.md).
 
 ### Docked workspace and shortcuts
 
@@ -26,7 +38,7 @@ Typing and number/select/range editing do not trigger unmodified shortcuts. Save
 
 ### Route animation and fine editing (v0.5.1)
 
-Open **Controles → Rota**. Draw points on the map, then choose **Animar rota** to prepare reveal keys from 0% at the start to 100% at the export duration. Press Space to preview. Existing camera view values are kept; route progress can still be edited on each view card and shaped through the outgoing curve. The **Revelação** slider previews a fraction and captured views retain that fraction.
+Open **Controles → Rota**. Draw points on the map, then choose **Animar rota** to prepare reveal keys from 0% at the start to 100% at the export duration. Press Space to preview. Existing camera view values are kept; route progress is edited on the Revelação da rota track and shaped through that property’s outgoing curve. The **Revelação** slider previews a fraction and captured views retain that fraction.
 
 Use **Editar pontos** to expose vertices and gray midpoint handles. Drag a vertex to reshape the route; click or drag a midpoint to insert a new point. Select a point in the list for exact longitude/latitude entry and press **Aplicar coordenadas**. **Inserir depois**, **Excluir ponto**, **Desfazer rota**, **Refazer rota** and **Enquadrar rota** support fine adjustments. V exits route editing. The dashed full-path guide is only an editing aid and does not appear in captured export frames.
 
@@ -35,7 +47,7 @@ Activating **Animar rota** on an imported LineString hides the original geograph
 ### Motion editing, curves and geographic areas (v0.5.0)
 
 - Drag timeline diamonds to retime views with frame snapping. Shift selects multiple keys. A drag is one undo step; use the timeline undo/redo buttons or Ctrl/Cmd+Z / Shift+Ctrl/Cmd+Z while focused in the timeline. Duplicate selected keys at a free playhead time or delete them. Focused diamonds support arrow-key nudging, with Shift for ten frames. Zoom the timeline to work on short intervals. Drag the upper timeline divider to resize its dock.
-- Select a departing key, then press **G / Editor de curvas**. Drag the two Bézier handles or edit X1/Y1/X2/Y2. Linear, smooth, ease-in, ease-out and hold remain available. This docked curve controls the whole camera-view transition; the same sampler is used for preview and export.
+- Select a departing key, then press **G / Editor de curvas**. Drag the two Bézier handles or edit X1/Y1/X2/Y2. Linear, smooth, ease-in, ease-out and hold remain available. Since v0.6.0 the docked curve controls only the selected property; the same sampler is used for preview and export.
 - **Enviar vistas ao Theatre.js** saves a local scene, converts the six camera/route channels into native Theatre tracks, and reloads into the Studio. Click a segment for Tween or a track graph icon for the native curve graph. Conversion replaces previous native Map tracks and keeps the original view keys. After closing Studio, the docked transport plays Theatre tracks while **Usar vistas na exportação** is off. Turn it on to return to the original view animation; native edits are not reverse-converted into views. Saving a scene preserves both sets. Native Studio retains the library's own panel layout; the default editor and its Bézier graph remain docked.
 - Open **Elementos → Países, cidades e regiões**. The local catalog contains 177 Natural Earth country/territory features with Portuguese names. Search for Brasil/Portugal/ISO code and choose **Preencher**. For municipal or regional boundaries, use **Cidade / região**, enter a qualified name and explicitly submit. Results with actual polygon geometry can be added, colored, outlined and labeled. Nominatim availability and returned administrative definitions vary.
 - Selected polygons have independent fill and outline switches/colors plus highlight, outline-only and solid presets. These styles survive save/reopen and basemap changes.
@@ -45,7 +57,7 @@ Country catalog data is generalized **Natural Earth 1:110m**, suitable for world
 
 ### Camera timeline and map styling
 
-Use the bottom timeline to capture the current camera at 0 seconds, enter another time, move the map and capture again. Select an easing curve for each departing view and use **Reproduzir** or the scrubber to preview. **Usar vistas na exportação** sends that same animation to PNG/MP4; disable it to use the existing Theatre Studio animation. Each view also stores `pathProgress` (0–1), so route reveals can run alongside camera moves. Capturing at an existing time replaces that view.
+Use the bottom timeline to capture the current camera at 0 seconds, enter another time, move the map and capture again. Select an easing curve for each departing view and use **Reproduzir** or the scrubber to preview. **Usar vistas na exportação** sends that same animation to PNG/MP4; disable it to use the existing Theatre Studio animation. Each view also stores `pathProgress` (0–1), so route reveals can run alongside camera moves. Capturing a full view replaces all six keys at that time; capturing one property replaces only its key.
 
 Expand **Estilo do mapa-base** to toggle map labels, roads and buildings, override water/background colors or load a custom HTTPS MapLibre style JSON. Visibility groups use layer/source names and apply best to the bundled OpenFreeMap styles; arbitrary providers may use different naming. Raster basemaps cannot expose these individual vector controls.
 

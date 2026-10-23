@@ -212,3 +212,46 @@ kbd { display:inline-block; font:10px ui-monospace,monospace; padding:3px 5px; b
 .route-coordinate-form>button { font-size:10px; }
 .route-coordinate-form [role=alert] { color:#ffc3a6; font-size:10px; margin:0; }
 .route-coordinate-form .feature-actions { margin:0; }
+
+/* Property timeline: a shared horizontal scale and sticky property column. */
+.track-workspace { display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:12px; }
+.track-workspace:has(.key-inspector) { grid-template-columns:minmax(0,1fr) 260px; }
+.track-workspace.with-inspector { grid-template-columns:minmax(0,1fr) 340px; }
+.track-workspace .timeline-tracks-scroll { padding:0 12px 12px; border:1px solid #394753; border-radius:3px; min-width:0; }
+.property-tracks { min-width:100%; position:relative; }
+.track-ruler-row,.property-track { display:grid; grid-template-columns:144px minmax(0,1fr); }
+.track-ruler-row { align-items:end; height:36px; }
+.track-ruler-row>strong { position:sticky; left:0; font-size:9px; color:#a0b9ca; background:#20262e; z-index:3; height:36px; display:grid; align-content:center; padding-left:8px; }
+.track-ruler-row>strong small { font-weight:400; font-size:8px; color:#7596ac; }
+.track-ruler-row .timeline-ruler { height:24px; margin:0; cursor:ew-resize; touch-action:none; }
+.track-body { position:relative; }
+.property-track { border-top:1px solid #35414d; min-height:31px; }
+.property-track-label { position:sticky; left:0; display:flex; align-items:center; gap:4px; border-left:3px solid; background:#27313a; z-index:3; }
+.property-track-label button { border:0; background:transparent; padding:5px; font-size:10px; }
+.property-track-label button:first-child { color:#acc6d6; font-size:14px; }
+.property-track-label button:last-child { text-align:left; padding-left:0; font-size:9px; }
+.property-lane { position:relative; min-width:0; min-height:31px; cursor:crosshair; background:repeating-linear-gradient(90deg,#303c46 0,#303c46 1px,transparent 1px,transparent 12.5%); touch-action:none; }
+.property-lane .timeline-key { top:3px; bottom:auto; line-height:19px; height:25px; background:#24313a; border:1px solid transparent; border-radius:2px; padding:1px 3px; font-size:15px; z-index:2; }
+.property-lane .timeline-key.active { background:#4d4738; border-color:#b49b64; }
+.property-lane .timeline-playhead { top:0; z-index:1; }
+.track-range { position:absolute; top:0; bottom:0; background:#8bc3c709; pointer-events:none; }
+.key-marquee { position:absolute; background:#69c9d227; border:1px solid #83d5e1; pointer-events:none; z-index:5; }
+.key-inspector { min-width:0; padding:10px; display:flex; flex-direction:column; gap:8px; border:1px solid #40515e; background:#1c252e; font-size:10px; }
+.key-inspector>strong { color:#e7ca8a; font-size:10px; }
+.key-inspector>label { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.key-inspector>label input,.key-inspector>label select { min-width:0; width:65%; font:10px ui-monospace,monospace; }
+.key-inspector>.curve-editor { padding:6px; }
+.key-inspector>button { font-size:10px; }
+.graph-modes { display:flex; gap:5px; }
+.graph-modes button { flex:1; font-size:9px; padding:4px; }
+.property-plot { width:100%; max-height:120px; background:#162029; }
+.property-plot text { fill:#99b1c2; font:9px ui-monospace,monospace; }
+.preview-range { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:7px 0 10px; font-size:9px; }
+.preview-range label { display:flex; align-items:center; gap:5px; }
+.preview-range input[type=number] { width:65px; font-size:9px; padding:3px; }
+.preview-range small,.timeline-help { color:#7e98ac; font-size:9px; }
+.track-filter { width:140px; font-size:10px; margin-left:auto; }
+.key-context-menu { position:absolute; width:180px; display:grid; gap:2px; z-index:10; padding:5px; background:#1b2934; border:1px solid #799ba9; box-shadow:0 4px 14px #0009; }
+.key-context-menu button { text-align:left; background:transparent; border:0; font-size:10px; padding:6px 8px; }
+.key-context-menu button:hover { background:#355363; }
+@media(max-width:900px) { .track-workspace:has(.key-inspector),.track-workspace.with-inspector { grid-template-columns:minmax(0,1fr); } .key-inspector { max-width:420px; } .track-filter { margin-left:0; } .track-ruler-row,.property-track { grid-template-columns:112px minmax(0,1fr); } .property-track-label button:last-child { font-size:8px; } }
