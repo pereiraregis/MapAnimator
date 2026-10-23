@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { DEMO, makeItems, normalizeGeoJSON } from './geo/features';
 import { downloadJSON } from './geo/scene';
 import DataImport from './DataImport';
+import AreaSearch from './AreaSearch';
 
 export default function FeatureBrowser({ items, setItems, selected, onSelect, onFocus, onLabel, onRoute, onStatus }) {
   const fileInput = useRef(null);
@@ -26,6 +27,7 @@ export default function FeatureBrowser({ items, setItems, selected, onSelect, on
   return <section className="feature-browser" aria-label="Elementos geográficos">
     <div className="feature-heading"><span>ELEMENTOS GEOGRÁFICOS</span><span>{items.length}</span></div>
     <p className="feature-hint">Importe países, regiões e trajetos. Selecione um elemento para editar seu estilo.</p>
+    <AreaSearch onStatus={onStatus} onAdd={feature => append(feature, feature.properties.name)} />
     <div className="feature-actions">
       <button onClick={() => fileInput.current.click()}>+ GeoJSON</button>
       <button onClick={() => append(DEMO, 'Demo')}>Exemplo</button>
@@ -48,6 +50,10 @@ export default function FeatureBrowser({ items, setItems, selected, onSelect, on
     {active && <div className="feature-inspector">
       <label>Nome<input value={active.name} onChange={e => update({ name: e.target.value })} /></label>
       <label>Cor<input type="color" value={active.style.color} onChange={e => style('color', e.target.value)} /></label>
+      {['Polygon', 'MultiPolygon'].includes(active.feature.geometry.type) && <label>Preenchimento<input type="checkbox" checked={active.style.fill !== false} onChange={e => style('fill', e.target.checked)} /></label>}
+      <label>Cor do contorno<input type="color" value={active.style.strokeColor || active.style.color} onChange={e => style('strokeColor', e.target.value)} /></label>
+      <label>Mostrar contorno<input type="checkbox" checked={active.style.outline !== false} onChange={e => style('outline', e.target.checked)} /></label>
+      <div className="feature-actions"><button onClick={() => update({ style: { ...active.style, fill: true, outline: true, opacity: .5, strokeColor: '#ffffff' } })}>Destaque</button><button onClick={() => update({ style: { ...active.style, fill: false, outline: true, opacity: 1, width: 3 } })}>Só contorno</button><button onClick={() => update({ style: { ...active.style, fill: true, outline: false, opacity: 1 } })}>Sólido</button></div>
       <label>Opacidade<input type="range" min="0" max="1" step="0.05" value={active.style.opacity} onChange={e => style('opacity', Number(e.target.value))} /></label>
       <label>Traço<input type="number" min="1" max="20" value={active.style.width} onChange={e => style('width', Math.min(20, Math.max(1, Number(e.target.value))))} /></label>
       <label>Raio do ponto<input type="number" min="1" max="30" value={active.style.radius} onChange={e => style('radius', Math.min(30, Math.max(1, Number(e.target.value))))} /></label>
