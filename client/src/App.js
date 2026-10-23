@@ -10,6 +10,9 @@ import studio from '@theatre/studio';
 import JSZip from 'jszip';
 import FeatureBrowser from './FeatureBrowser';
 import CameraTimeline from './CameraTimeline';
+import RouteEditor from './RouteEditor';
+import useRouteEditor from './useRouteEditor';
+import { animateRouteViews } from './geo/route';
 import ShortcutHelp from './ShortcutHelp';
 import { shortcutAction } from './shortcuts';
 import { viewsToTheatre } from './geo/theatre';
@@ -29,26 +32,6 @@ studio.initialize({ usePersistentStorage: !reopenedScene });
 studio.ui.hide();
 const project = getProject('MapAnimator v2', reopenedScene ? { state: reopenedScene.theatre } : undefined);
 const sheet = project.sheet('Main Scene');
-
-const distance = (p1, p2) => Math.sqrt((p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2);
-const getInterpolatedPath = (coords, progress) => {
-  if (coords.length < 2 || progress <= 0) return [];
-  if (progress >= 0.99) return coords;
-  const total = coords.reduce((acc, p, i) => i === 0 ? 0 : acc + distance(coords[i - 1], p), 0);
-  const target = total * progress;
-  let acc = 0; const path = [];
-  for (let i = 0; i < coords.length - 1; i++) {
-    const p1 = coords[i], p2 = coords[i + 1], seg = distance(p1, p2);
-    path.push(p1);
-    if (acc + seg >= target) {
-      const r = (target - acc) / seg;
-      path.push([p1[0] + (p2[0] - p1[0]) * r, p1[1] + (p2[1] - p1[1]) * r]);
-      return path;
-    }
-    acc += seg;
-  }
-  return path;
-};
 
 /**
  * Capture the map's WebGL canvas using the 'render' event.
@@ -128,7 +111,7 @@ function App() {
   appearanceRef.current = appearance; animationModeRef.current = waypointMode && waypoints.length > 0;
   const projectInput = useRef(null), featuresRef = useRef(features);
   const setupLayersRef = useRef(null);
-  const syncPathLayerRef = useRef(null);
+  const routeEditorRef = useRef(null);
   featuresRef.current = features;
   const [isDrawing, setIsDrawing] = useState(false);
   const [status, setStatus] = useState('Ready.');
@@ -147,7 +130,9 @@ function App() {
   const [activePinId, setActivePinId] = useState(null);
   const toggleSec = id => setSec(p => ({ ...p, [id]: !p[id] }));
 
-  const customPathCoords = useRef(reopenedScene?.route || []), pinsRef = useRef(reopenedScene?.pins || []);
+  const routeEditor = useRouteEditor({ map, initial: reopenedScene?.route || [], initialProgress: reopenedScene?.cameraMode === 'waypoints' ? (sampleCamera(reopenedScene.waypoints || [], 0)?.pathProgress ?? 1) : 1, color: settings.pathColor, width: settings.pathWidth, disabled: isRendering, onPause: () => timelineRef.current?.pause() });
+  routeEditorRef.current = routeEditor;
+  const customPathCoords = routeEditor.coordsRef, pinsRef = useRef(reopenedScene?.pins || []);
   const isDrawingRef = useRef(false);
   useEffect(() => { isDrawingRef.current = isDrawing; }, [isDrawing]);
 
@@ -170,15 +155,6 @@ function App() {
       } catch (e) { console.warn('FFmpeg load failed:', e); }
     })();
   }, []);
-
-  const syncPathLayer = useCallback((coords = customPathCoords.current) => {
-    if (map.current?.getSource('route-source')) {
-      map.current.setPaintProperty('route-line', 'line-color', settings.pathColor);
-      map.current.setPaintProperty('route-line', 'line-width', parseFloat(settings.pathWidth));
-      map.current.getSource('route-source').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords } });
-    }
-  }, [settings.pathColor, settings.pathWidth]);
-  syncPathLayerRef.current = syncPathLayer;
 
   const syncPinsLayer = useCallback(() => {
     if (map.current?.getSource('pins-source')) {
@@ -207,10 +183,7 @@ function App() {
 
   const setupLayers = useCallback(() => {
     if (!map.current) return;
-    if (!map.current.getSource('route-source')) {
-      map.current.addSource('route-source', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } } });
-      map.current.addLayer({ id: 'route-line', type: 'line', source: 'route-source', paint: { 'line-color': settings.pathColor, 'line-width': parseFloat(settings.pathWidth) } });
-    }
+    routeEditorRef.current.setup();
     if (!map.current.getSource('pins-source')) {
       map.current.addSource('pins-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
@@ -232,9 +205,8 @@ function App() {
       // Labels are rasterized into each icon; a second symbol layer would
       // unnecessarily request glyphs and delay placement of this source.
     }
-    syncPathLayer();
     syncPinsLayer();
-  }, [settings.pathColor, settings.pathWidth, syncPathLayer, syncPinsLayer]);
+  }, [syncPinsLayer]);
   setupLayersRef.current = setupLayers;
 
   const updateViewport = useCallback(() => {
@@ -261,7 +233,6 @@ function App() {
     if (map.current) map.current.setStyle(settings.mapStyle, { diff: false });
   }, [settings.mapStyle]);
 
-  useEffect(() => { syncPathLayer(); }, [syncPathLayer]);
   useEffect(() => { syncFeatureLayers(map.current, features); }, [features]);
   useEffect(() => { applyBasemap(map.current, basemapOriginals.current, appearance); }, [appearance]);
 
@@ -305,7 +276,9 @@ function App() {
       updateViewport();
 
     map.current.on('click', e => {
-      if (isDrawingRef.current) { customPathCoords.current.push([e.lngLat.lng, e.lngLat.lat]); syncPathLayerRef.current(); }
+      if (routeEditorRef.current.consumeClick()) return;
+      if (isDrawingRef.current) { routeEditorRef.current.append([e.lngLat.wrap().lng, e.lngLat.lat]); }
+      else if (routeEditorRef.current.editing) return;
       else {
         if (map.current.queryRenderedFeatures(e.point, { layers: ['pins-icon-layer'].filter(id => map.current.getLayer(id)) }).length) return;
         const layers = ['ma-points', 'ma-outlines', 'ma-polygons'].filter(id => map.current.getLayer(id));
@@ -316,7 +289,7 @@ function App() {
 
     // Native pin dragging logic (bind to icon layer)
     map.current.on('mousedown', 'pins-icon-layer', e => {
-      if (isDrawingRef.current || e.originalEvent.button !== 0) return;
+      if (isDrawingRef.current || routeEditorRef.current.editing || e.originalEvent.button !== 0) return;
       e.preventDefault();
       const feature = e.features[0];
       if (feature) {
@@ -376,7 +349,7 @@ function App() {
       const pitch = typeof v.pitch === 'number' ? v.pitch : map.current.getPitch();
       const bearing = typeof v.bearing === 'number' ? v.bearing : map.current.getBearing();
       map.current.jumpTo({ center: [lng, lat], zoom, pitch, bearing });
-      if (customPathCoords.current.length > 1) syncPathLayerRef.current(getInterpolatedPath(customPathCoords.current, v.pathProgress || 0));
+      routeEditorRef.current.setProgress(v.pathProgress ?? 1);
     });
     return () => { window.removeEventListener('mouseup', finishPinDrag); window.removeEventListener('blur', finishPinDrag); unsubscribe(); attribution.onRemove(); geocoder.onRemove(); map.current?.remove(); map.current = null; };
   }, []); // eslint-disable-line
@@ -456,6 +429,7 @@ function App() {
     }
     const total = Math.ceil(duration * fps);
     const frames = [];
+    routeEditor.hideHandles(true);
     for (let i = 0; i < total; i++) {
       if (waypointMode && waypoints.length) seekCamera(start + i / fps);
       else sheet.sequence.position = start + (i / fps);
@@ -495,7 +469,7 @@ function App() {
       Object.assign(document.createElement('a'), { href: url, download: `map_${Date.now()}.mp4` }).click();
       setStatus('Done! 🎉'); setTimeout(() => setStatus('Ready.'), 3000);
     } catch (e) { console.error(e); alert(`Export failed: ${e?.message}`); }
-    finally { setIsRendering(false); }
+    finally { routeEditor.hideHandles(false); setIsRendering(false); }
   };
 
   const generatePNGSequence = async () => {
@@ -512,7 +486,7 @@ function App() {
       Object.assign(document.createElement('a'), { href: url, download: `frames_${Date.now()}.zip` }).click();
       setStatus('Done! 🎉'); setTimeout(() => setStatus('Ready.'), 3000);
     } catch (e) { console.error(e); alert(`PNG export failed: ${e?.message}`); }
-    finally { setIsRendering(false); }
+    finally { routeEditor.hideHandles(false); setIsRendering(false); }
   };
 
   const focusFeature = feature => {
@@ -599,12 +573,37 @@ function App() {
   const captureCamera = () => {
     if (!map.current) return null;
     const c = map.current.getCenter();
-    return { lng: c.wrap().lng, lat: c.lat, zoom: map.current.getZoom(), pitch: map.current.getPitch(), bearing: map.current.getBearing(), pathProgress: 1 };
+    return { lng: c.wrap().lng, lat: c.lat, zoom: map.current.getZoom(), pitch: map.current.getPitch(), bearing: map.current.getBearing(), pathProgress: routeEditor.progressRef.current };
+  };
+  const setDrawingMode = value => {
+    timelineRef.current?.pause();
+    if (value) { routeEditor.setEditing(true); routeEditor.setProgress(1); }
+    setIsDrawing(value);
+  };
+  const frameRoute = () => {
+    if (customPathCoords.current.length > 1) focusFeature({ geometry: { type: 'LineString', coordinates: customPathCoords.current } });
+    else if (customPathCoords.current.length) map.current?.easeTo({ center: customPathCoords.current[0], duration: 300 });
+  };
+  const animateRoute = () => {
+    if (customPathCoords.current.length < 2) return;
+    timelineRef.current?.pause(); setIsDrawing(false); routeEditor.setEditing(false);
+    const camera = captureCamera(); if (!camera) return;
+    setWaypoints(all => animateRouteViews(all, camera, settings.exportDuration)); setWaypointMode(true); setTimelineVisible(true);
+    timelineRef.current?.start(); routeEditor.setProgress(0);
+    setStatus('Revelação da rota pronta: 0% no início e 100% no fim. Pressione Espaço para reproduzir.');
+  };
+  const importRoute = item => {
+    if (item.feature.geometry.coordinates.length > 10000) { setStatus('Simplifique a rota para até 10000 pontos antes de importar.'); return; }
+    setDrawingMode(false); routeEditor.change(item.feature.geometry.coordinates); routeEditor.setProgress(1);
+    setFeatures(all => all.map(f => f.id === item.id ? { ...f, visible: false } : f));
+    setPanelVisible(true); setSec(all => ({ ...all, draw: false })); if (compact) setMobilePane('controls');
+    animateRoute();
+    setStatus('Rota importada e revelação pronta. Use Espaço para reproduzir ou Editar pontos para ajustar. A linha original foi ocultada.');
   };
   const seekCamera = time => {
     const v = sampleCamera(waypoints, time); if (!v || !map.current) return;
     map.current.jumpTo({ center: [v.lng, v.lat], zoom: v.zoom, pitch: v.pitch, bearing: v.bearing });
-    if (customPathCoords.current.length > 1) syncPathLayerRef.current(getInterpolatedPath(customPathCoords.current, v.pathProgress));
+    routeEditorRef.current.setProgress(v.pathProgress);
   };
 
   const activatePane = pane => {
@@ -628,14 +627,14 @@ function App() {
     backTen: () => timelineRef.current?.step(-10), forwardTen: () => timelineRef.current?.step(10),
     start: () => timelineRef.current?.start(), end: () => timelineRef.current?.end(),
     previous: () => timelineRef.current?.previous(), next: () => timelineRef.current?.next(),
-    draw: () => { timelineRef.current?.pause(); setIsDrawing(true); }, select: () => setIsDrawing(false),
+    draw: () => setDrawingMode(true), select: () => { setDrawingMode(false); routeEditor.setEditing(false); },
     pin: addPin, fit: fitSelection, north: () => map.current?.easeTo({ bearing: 0, duration: 300 }),
     save: saveScene, open: () => projectInput.current?.click(), help: showHelp,
     curves: () => { setTimelineVisible(true); timelineRef.current?.curves(); },
     timeline: () => setTimelineVisible(v => !v),
     controls: () => activatePane('controls'), map: () => activatePane('map'), features: () => activatePane('features'),
     focus: () => { const show = !panelVisible && !browserVisible; setPanelVisible(show); setBrowserVisible(show); setMobilePane('map'); },
-    escape: () => { timelineRef.current?.pause(); setIsDrawing(false); setRightTab('features'); },
+    escape: () => { timelineRef.current?.pause(); setDrawingMode(false); routeEditor.setEditing(false); setRightTab('features'); },
   };
   useEffect(() => {
     const keydown = event => {
@@ -652,7 +651,7 @@ function App() {
   return (
     <div className={`app-container ${timelineVisible ? 'with-timeline' : ''}`} style={{ '--left-width': panelVisible ? 'var(--panel-left-size)' : '0px', '--right-width': browserVisible ? 'var(--panel-right-size)' : '0px', '--timeline-height': timelineVisible ? `min(65vh, ${timelineHeight}px)` : '0px' }}>
       <header className="workspace-bar">
-        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.5.0</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
+        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.5.1</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
         <input aria-label="Nome do projeto" value={projectName} onChange={e => setProjectName(e.target.value)} />
         <nav className="workspace-navigation" aria-label="Áreas do editor">
           <button title="Controles (1)" aria-pressed={compact ? mobilePane === 'controls' : panelVisible} onClick={() => activatePane('controls')}>Controles</button>
@@ -679,7 +678,7 @@ function App() {
           {rightTab === 'features' && <>
         <FeatureBrowser items={features} setItems={setFeatures} selected={selectedFeature} onSelect={setSelectedFeature}
           onFocus={focusFeature} onLabel={labelFeature} onStatus={setStatus}
-          onRoute={item => { customPathCoords.current = item.feature.geometry.coordinates.map(p => [...p]); syncPathLayer(); setStatus('Rota pronta. Ajuste Rota de 0 a 1 nas vistas da timeline.'); }} />
+          onRoute={importRoute} />
           </>}
           {rightTab === 'pin' && <>
             <div className="pin-library" aria-label="Lista de pins">{pins.map(pin => <div key={pin.id} className={pin.id === activePinId ? 'selected' : ''}><input type="checkbox" aria-label={`Mostrar pin ${pin.text}`} checked={pin.visible !== false} onChange={e => updatePin(pin.id, 'visible', e.target.checked)} /><button onClick={() => setActivePinId(pin.id)}><span style={{ background: pin.color }} />{pin.text || 'Sem nome'}</button><button aria-label={`Enquadrar pin ${pin.text}`} onClick={() => map.current?.easeTo({ center: [pin.lng, pin.lat], duration: 500 })}>⌖</button></div>)}</div>
@@ -835,17 +834,12 @@ function App() {
 
         <Section title="Rota" id="draw" collapsed={sec.draw} onToggle={toggleSec}>
           <div className="prop-row"><label>Cor</label>
-            <input type="color" value={settings.pathColor} onChange={e => { setSettings(s => ({ ...s, pathColor: e.target.value })); syncPathLayer(); }} />
+            <input type="color" value={settings.pathColor} onChange={e => setSettings(s => ({ ...s, pathColor: e.target.value }))} />
           </div>
           <div className="prop-row"><label>Traço</label>
             <input type="number" min="1" max="20" value={settings.pathWidth} onChange={e => setSettings(s => ({ ...s, pathWidth: e.target.value }))} />
           </div>
-          <div className="prop-row" style={{ gap: '4px' }}>
-            <button className={`panel-btn ${isDrawing ? 'active' : ''}`} onClick={() => setIsDrawing(!isDrawing)}>
-              {isDrawing ? 'Concluir rota · V' : 'Desenhar rota · D'}
-            </button>
-            <button className="panel-btn" onClick={() => { customPathCoords.current = []; syncPathLayer(); }}>Limpar</button>
-          </div>
+          <RouteEditor route={routeEditor} drawing={isDrawing} onDrawing={setDrawingMode} onAnimate={animateRoute} onProgress={value => { timelineRef.current?.pause(); routeEditor.setProgress(value); }} onFrame={frameRoute} disabled={isRendering} />
         </Section>
 
         <Section title="Pins" id="pins" collapsed={sec.pins} onToggle={toggleSec}>
@@ -867,7 +861,7 @@ function App() {
 
       <main className="map-workspace" aria-label="Prévia do mapa" hidden={compact && mobilePane !== 'map'}>
         <div className="map-toolbar"><span className="view-mode-tag">{isDrawing ? 'DESENHANDO ROTA' : 'PRÉVIA'}</span><span>{settings.resolution.replace('x', ' × ')} · {settings.fps} fps</span><div className="map-search" ref={searchContainer} />
-          <div className="map-tools"><button title="Selecionar (V)" aria-pressed={!isDrawing} onClick={() => setIsDrawing(false)}>↖ Selecionar</button><button title="Desenhar rota (D)" aria-pressed={isDrawing} onClick={() => setIsDrawing(v => !v)}>⌁ Rota</button><button title="Enquadrar seleção (F)" onClick={fitSelection}>⌖</button><button title="Norte (N)" onClick={() => map.current?.easeTo({ bearing: 0, duration: 300 })}>N ↑</button></div>
+          <div className="map-tools"><button title="Selecionar (V)" aria-pressed={!isDrawing} onClick={() => { setDrawingMode(false); routeEditor.setEditing(false); }}>↖ Selecionar</button><button title="Desenhar rota (D)" aria-pressed={isDrawing} onClick={() => setDrawingMode(!isDrawing)}>⌁ Rota</button><button title="Enquadrar seleção (F)" onClick={fitSelection}>⌖</button><button title="Norte (N)" onClick={() => map.current?.easeTo({ bearing: 0, duration: 300 })}>N ↑</button></div>
         </div>
         <div className="map-viewport">
         <div ref={mapWrapper} className="map-container">

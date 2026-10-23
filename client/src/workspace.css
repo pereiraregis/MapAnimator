@@ -197,3 +197,18 @@ kbd { display:inline-block; font:10px ui-monospace,monospace; padding:3px 5px; b
 .timeline-resize { position:absolute; top:0; left:0; right:0; height:6px; cursor:ns-resize; touch-action:none; background:#34434f; }
 .timeline-resize:hover,.timeline-resize:focus { background:#69c9d2; }
 @media(max-width:900px) { :root { --timeline-size:300px; } .timeline-edit-area.with-curves { grid-template-columns:minmax(0,1fr); } .curve-editor { max-width:400px; margin-top:10px; } .timeline-edit-tools>span { display:none; } .native-studio-bar>span { display:none; } }
+
+.route-editor .feature-actions { margin:8px 12px; }
+.route-progress { display:flex; align-items:center; gap:7px; margin:10px 12px; font-size:10px; }
+.route-progress input { min-width:0; flex:1; width:80px; }
+.route-progress output { min-width:30px; font:10px ui-monospace,monospace; }
+.route-vertex-list { display:grid; gap:3px; max-height:140px; overflow:auto; margin:10px 12px; }
+.route-vertex-list button { display:flex; align-items:center; gap:8px; text-align:left; font-size:10px; }
+.route-vertex-list small { color:#a0b7c8; font:9px ui-monospace,monospace; }
+.route-coordinate-form { margin:10px 12px; display:grid; gap:7px; }
+.route-coordinate-form strong { font-size:10px; color:#e9c477; }
+.route-coordinate-form label { display:grid; grid-template-columns:70px minmax(0,1fr); gap:6px; align-items:center; font-size:10px; }
+.route-coordinate-form input { width:100%; font:10px ui-monospace,monospace; }
+.route-coordinate-form>button { font-size:10px; }
+.route-coordinate-form [role=alert] { color:#ffc3a6; font-size:10px; margin:0; }
+.route-coordinate-form .feature-actions { margin:0; }

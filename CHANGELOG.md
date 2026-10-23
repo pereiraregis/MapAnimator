@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.5.1 — 2026-10-23
+
+- Restore route reveal workflow with an explicit Animate Route command that prepares 0%/100% view keys, retaining existing camera view values. Captured views now use the current route progress.
+- Hide the imported static LineString when activating it as an animated route, including updates while map sources are loading.
+- Keep route progress when changing color/width, editing vertices or rebuilding map styles. Empty and single-point routes use valid empty GeoJSON; repeated vertices no longer produce NaN and the final 1% no longer snaps to completion.
+- Route vertex editor: drag vertices and midpoint handles, insert/delete points, apply exact numeric coordinates, frame the route, and undo/redo geometric edits. Release outside the canvas finishes dragging; blur cancels it and restores map pan.
+- Editing overlays are omitted from frame capture and return after export. Saved scene files retain edited route coordinates and animation keys.
+
 ## v0.5.0 — 2026-10-23
 
 - Draggable view keyframes with frame snapping, multi-selection, duplication at the playhead, deletion, undo/redo, keyboard nudging, timeline zoom and a resizable dock.

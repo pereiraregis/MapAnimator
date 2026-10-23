@@ -1,6 +1,6 @@
 # Map Animator V2
 
-**Current release: v0.5.0.** [Open the editor](https://pereiraregis.github.io/MapAnimator/) · [Changelog](CHANGELOG.md)
+**Current release: v0.5.1.** [Open the editor](https://pereiraregis.github.io/MapAnimator/) · [Changelog](CHANGELOG.md)
 
 ### Docked workspace and shortcuts
 
@@ -23,6 +23,14 @@ The editor now uses fixed workspace regions rather than draggable windows: contr
 | ? / Escape | Shortcut help / pause and exit drawing/help |
 
 Typing and number/select/range editing do not trigger unmodified shortcuts. Save/open remain available while editing. Shortcuts are suspended during export. Press **?** for the docked shortcut reference. Press **G** for the docked Bézier editor. The native Theatre Studio is available explicitly through the timeline; its own panels appear only while that advanced editor is open.
+
+### Route animation and fine editing (v0.5.1)
+
+Open **Controles → Rota**. Draw points on the map, then choose **Animar rota** to prepare reveal keys from 0% at the start to 100% at the export duration. Press Space to preview. Existing camera view values are kept; route progress can still be edited on each view card and shaped through the outgoing curve. The **Revelação** slider previews a fraction and captured views retain that fraction.
+
+Use **Editar pontos** to expose vertices and gray midpoint handles. Drag a vertex to reshape the route; click or drag a midpoint to insert a new point. Select a point in the list for exact longitude/latitude entry and press **Aplicar coordenadas**. **Inserir depois**, **Excluir ponto**, **Desfazer rota**, **Refazer rota** and **Enquadrar rota** support fine adjustments. V exits route editing. The dashed full-path guide is only an editing aid and does not appear in captured export frames.
+
+Activating **Animar rota** on an imported LineString hides the original geographic feature to avoid a static copy covering the reveal. That feature remains in the feature list and can be shown again explicitly. The active editable route and its keys are saved with the scene. This is geometric point editing, without road-network snapping or a routing service.
 
 ### Motion editing, curves and geographic areas (v0.5.0)
 
