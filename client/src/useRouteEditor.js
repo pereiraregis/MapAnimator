@@ -6,7 +6,7 @@ export default function useRouteEditor({ map, initial = [], initialProgress = 1,
   const [editing, setEditing] = useState(false), [selected, setSelected] = useState(null), [progress, setProgressState] = useState(initialProgress);
   const [revision, setRevision] = useState(0);
   const coordsRef = useRef(coords), state = useRef({}), history = useRef({ undo: [], redo: [] }), drag = useRef(null), cleanup = useRef(null);
-  const exporting = useRef(false), progressRef = useRef(initialProgress), suppressClick = useRef(false);
+  const exporting = useRef(false), progressRef = useRef(initialProgress), suppressClick = useRef(0);
   state.current = { editing, selected, color, width, disabled, onPause };
   const sync = useCallback(() => {
     const m = map.current; if (!m?.getSource('route-source')) return;
@@ -37,7 +37,7 @@ export default function useRouteEditor({ map, initial = [], initialProgress = 1,
     const m = map.current;
     if (d.pan && m) m.dragPan.enable();
     if (m) m.getCanvasContainer().style.cursor = '';
-    suppressClick.current = true;
+    suppressClick.current = Date.now() + 250;
   }, [map, replace]);
   const setup = useCallback(() => {
     const m = map.current; if (!m) return;
@@ -56,7 +56,7 @@ export default function useRouteEditor({ map, initial = [], initialProgress = 1,
     const start = e => {
       if (!state.current.editing || state.current.disabled || exporting.current || (e.originalEvent.button !== undefined && e.originalEvent.button !== 0)) return;
       const hit = e.features?.[0]; if (!hit) return;
-      e.preventDefault(); state.current.onPause(); suppressClick.current = false;
+      e.preventDefault(); state.current.onPause(); suppressClick.current = 0;
       const before = coordsRef.current, index = Number(hit.properties.index) + (hit.properties.kind === 'midpoint' ? 1 : 0);
       drag.current = { before, index, pan: m.dragPan.isEnabled() };
       if (hit.properties.kind === 'midpoint') replace([...before.slice(0, index), midpoint(before[index - 1], before[index]), ...before.slice(index)]);
@@ -84,7 +84,7 @@ export default function useRouteEditor({ map, initial = [], initialProgress = 1,
   };
   return { coords, coordsRef, editing, selected, progress, progressRef, revision, setup, sync, setProgress, change, setSelected,
     setEditing: toggleEditing, finish, undo, canUndo: !!history.current.undo.length, canRedo: !!history.current.redo.length,
-    consumeClick: () => { const value = suppressClick.current; suppressClick.current = false; return value; },
+    consumeClick: () => { const value = Date.now() < suppressClick.current; suppressClick.current = 0; return value; },
     append: p => { change([...coordsRef.current, p]); setSelected(coordsRef.current.length - 1); },
     remove: index => { change(coordsRef.current.filter((_, i) => i !== index)); setSelected(null); },
     insert: index => { const current = coordsRef.current; if (index < 0 || index >= current.length - 1) return; change([...current.slice(0, index + 1), midpoint(current[index], current[index + 1]), ...current.slice(index + 1)]); setSelected(index + 1); },

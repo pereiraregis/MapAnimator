@@ -1,7 +1,7 @@
 ## v0.5.1 — 23/10/2026
 
-- Build final concluído: main.74004f75.js, cerca de 600,26 kB gzip; avisos existentes de dependências dinâmicas e tamanho do bundle.
-- 40 testes passaram em oito suites, incluindo a nova lógica de revelação e o hook/componente de edição de pontos.
+- Build final concluído: main.53b2c446.js, cerca de 600,27 kB gzip; avisos existentes de dependências dinâmicas e tamanho do bundle.
+- 41 testes passaram em oito suites, incluindo a nova lógica de revelação e o hook/componente de edição de pontos.
 - Verificados: revelação em 0/25/75/99,5/100%, geometria vazia ou com um ponto, segmentos repetidos sem NaN, interpolação angular curta, criação de chaves de revelação, valores de câmera nos limites e preservação de chaves além da duração.
 - Testes React com fonte/eventos de mapa simulados: inserir/arrastar ponto intermediário, câmera travada durante arraste, mouseup fora do mapa, blur com cancelamento, desfazer/refazer, aplicação de seis casas decimais, rejeição de coordenada inválida, exclusão e reconstrução após troca de estilo.
 - Confirmado que alterar cor/geometria preserva o progresso e que fontes de alças/guia ficam vazias durante a captura. A ocultação da linha original importada foi testada mesmo com fontes em carregamento.

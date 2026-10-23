@@ -64,3 +64,11 @@ test('style reload reconstructs the current edited geometry at the current progr
   expect(sources['route-source'].data.features[0].geometry.coordinates).toEqual([[0, 0], [5, 0]]);
   expect(sources['route-handles'].data.features).toHaveLength(3);
 });
+
+test('release outside the map does not swallow a later drawing click', () => {
+  const now = jest.spyOn(Date, 'now').mockReturnValue(1000);
+  act(() => route.setEditing(true));
+  act(() => handlers['mousedown:route-edit-handles']({ originalEvent: { button: 0 }, preventDefault() {}, features: [{ properties: { kind: 'vertex', index: 1 } }] }));
+  act(() => window.dispatchEvent(new MouseEvent('mouseup')));
+  now.mockReturnValue(1500); expect(route.consumeClick()).toBe(false); now.mockRestore();
+});
