@@ -1,0 +1,5 @@
+rust/vendor/effectcraft/** text eol=lf
+client/public/rust/*.wasm -text
+client/build/rust/*.wasm -text
+client/public/rust/*.js text eol=lf
+client/build/rust/*.js text eol=lf

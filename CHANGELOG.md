@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.7.0 — 2026-10-23
+
+- First Rust migration stage: the active timeline is an egui canvas compiled to WebAssembly; map and surrounding UI remain MapLibre/React.
+- Reuse unmodified EffectCraft time/geometry/color/keyframe modules, with pinned source hashes and MIT notices. Actual Rust evaluation supports independent temporal sides, velocity/influence and Auto/Continuous Bézier.
+- Rust command/history model, property capture, frame/magnetic snapping, group drag, rectangle selection, clipboard, context menus, transport and value/speed graphs with draggable temporal handles. Key/curve gestures create one undo entry; cancellation restores the original document.
+- Native key metadata persists in existing scene files. Preview and PNG/MP4 await/use the compiled Rust sampler; route preparation preserves native camera keys while resetting route reveal interpolation.
+- Reproducible Rust/WASM build and real-binary smoke checks, core and headless egui event tests, and React bridge tests. Source adaptation/provenance and distributed dependency/font licenses included.
+- Document future Tauri reuse and After Effects JSX export feasibility/projection limits. No desktop package or After Effects exporter in this stage.
+
+
 ## v0.6.0 — 2026-10-23
 
 - Replace aggregate view diamonds with six independent property tracks, preserving existing scene animation. Property-only capture, timing, values and interpolation share a sampler across preview, export and Theatre conversion.

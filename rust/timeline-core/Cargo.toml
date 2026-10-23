@@ -1,0 +1,9 @@
+[package]
+name = "mapanimator-core"
+version = "0.7.0"
+edition = "2024"
+[dependencies]
+effectcraft-keyframe.workspace = true
+effectcraft-time.workspace = true
+serde.workspace = true
+serde_json.workspace = true

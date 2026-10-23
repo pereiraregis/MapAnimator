@@ -33,3 +33,9 @@ test('exposes focus mode, workspace panes and contextual help', () => {
   expect(shortcutAction(event('?', { shiftKey: true }))).toBe('help');
   expect(shortcutAction(event('Escape'))).toBe('escape');
 });
+
+test('Rust canvas owns timeline keys while global save/open remain available', () => {
+  const target={closest: selector => selector === '[data-rust-timeline]' ? {} : null};
+  for(const key of [' ', 'k', 'g', 'ArrowLeft', 'Home', 'Escape']) expect(shortcutAction(event(key,{target}))).toBeNull();
+  expect(shortcutAction(event('s',{target,ctrlKey:true}))).toBe('save');
+});

@@ -1,3 +1,4 @@
+import { sampleRust } from '../rust/runtime';
 export const CHANNELS = ['lng', 'lat', 'zoom', 'pitch', 'bearing', 'pathProgress'];
 export const channelPoint = (p, key) => ({ ...p, ...(p.interpolation?.[key] || {}) });
 export const hasChannel = (p, key) => !p.channels || p.channels.includes(key);
@@ -43,6 +44,7 @@ export const wrap = angle => ((angle + 180) % 360 + 360) % 360 - 180;
 export const easeProgress = (point, t) => point.easing === 'bezier' ? bezierProgress(t, curveOf(point)) : point.easing === 'hold' ? 0 : point.easing === 'smooth' ? t * t * (3 - 2 * t) : point.easing === 'easeIn' ? t * t : point.easing === 'easeOut' ? 1 - (1 - t) ** 2 : t;
 export function sampleCamera(points, time) {
   if (!points.length) return null;
+  const native = sampleRust(points, time); if (native) return native;
   const sorted = [...points].sort((a, b) => a.time - b.time);
   const result = {};
   CHANNELS.forEach(key => {

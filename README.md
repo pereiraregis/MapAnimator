@@ -1,8 +1,20 @@
 # Map Animator V2
 
-**Current release: v0.6.0.** [Open the editor](https://pereiraregis.github.io/MapAnimator/) · [Changelog](CHANGELOG.md)
+**Current release: v0.7.0 — Rust timeline migration, stage 1.** [Open the editor](https://pereiraregis.github.io/MapAnimator/) · [Changelog](CHANGELOG.md)
 
-### Property timeline inspired by EffectCraft (v0.6.0)
+### Rust / egui timeline (v0.7.0)
+
+The active timeline now runs in **Rust + WebAssembly**, using the actual EffectCraft keyframe/time modules. The map and surrounding workspace remain MapLibre/React. Keyframe interpolation, velocity/influence, Auto/Continuous Bézier, commands and undo are handled by the Rust animation editor. The egui panel provides tracks, drag/marquee, transport, context menus and draggable temporal curve handles.
+
+Use **K** to capture a camera view, or **◇** beside a property to key only that track. Shift-click or drag a rectangle to select; drag keys to retime. **G / Graph Editor** opens value/speed graphs and independent incoming/outgoing velocity/influence. **F9** is Easy Ease, **Shift+F9** incoming and **Ctrl/Cmd+Shift+F9** outgoing. Expand the timeline or scroll its canvas to reach the graphs. Copy/paste and undo are owned by the canvas while focused.
+
+Preview and PNG/MP4 export use the same compiled Rust sampler. Saved scenes retain native key metadata; existing scenes migrate on load. Keep a backup if reopening in an older release, which cannot reproduce native curves. Map camera/reveal bounds still clamp output. The preview work area does not trim export duration.
+
+This is the first migration stage: pin/polygon layers, spatial path editing in the timeline and the complete EffectCraft compositor are not included. Tauri packaging is planned separately. After Effects export is feasible through JSX plus rendered map media and projected editable overlays; no AE exporter ships yet.
+
+[Architecture, build and migration limits](docs/RUST_MIGRATION.md) · [After Effects export study](docs/AFTER_EFFECTS_EXPORT.md) · [Validation](docs/VALIDATION.md)
+
+### Previous React timeline (v0.6.0, historical reference)
 
 The docked timeline now has independent **Longitude, Latitude, Zoom, Inclinação, Rotação and Revelação da rota** tracks. **K / Capturar vista** keys all six; the diamond beside a property keys only that property at the playhead. Moving a zoom key no longer moves the camera-position or route keys. Existing scenes retain their animation and appear as six aligned tracks.
 
