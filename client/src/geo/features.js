@@ -37,7 +37,7 @@ export function makeItems(features, filename = 'Elemento') {
 
 export function renderCollection(items) {
   return { type: 'FeatureCollection', features: items.filter(i => i.visible).map(i => ({
-    ...i.feature, properties: { ...i.feature.properties, _maId: i.id, _maColor: i.style.color, _maOpacity: i.style.opacity, _maWidth: i.style.width, _maRadius: i.style.radius },
+    ...i.feature, properties: { ...i.feature.properties, _maId: i.id, _maColor: i.style.color, _maOpacity: i.style.opacity, _maFillOpacity: i.style.fill === false ? 0 : i.style.opacity, _maStroke: i.style.strokeColor || i.style.color, _maLineOpacity: i.style.outline === false ? 0 : i.style.opacity, _maWidth: i.style.width, _maRadius: i.style.radius },
   })) };
 }
 

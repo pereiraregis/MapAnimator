@@ -1,6 +1,6 @@
 # Map Animator V2
 
-**Current release: v0.4.0.** [Open the editor](https://pereiraregis.github.io/MapAnimator/) · [Changelog](CHANGELOG.md)
+**Current release: v0.5.0.** [Open the editor](https://pereiraregis.github.io/MapAnimator/) · [Changelog](CHANGELOG.md)
 
 ### Docked workspace and shortcuts
 
@@ -22,7 +22,18 @@ The editor now uses fixed workspace regions rather than draggable windows: contr
 | 1 / 2 / 3 | Controls / map / elements |
 | ? / Escape | Shortcut help / pause and exit drawing/help |
 
-Typing and number/select/range editing do not trigger unmodified shortcuts. Save/open remain available while editing. Shortcuts are suspended during export. Press **?** for the docked shortcut reference. The previous floating Theatre Studio entry point has been removed; saved Theatre tracks remain available to the legacy export mode.
+Typing and number/select/range editing do not trigger unmodified shortcuts. Save/open remain available while editing. Shortcuts are suspended during export. Press **?** for the docked shortcut reference. Press **G** for the docked Bézier editor. The native Theatre Studio is available explicitly through the timeline; its own panels appear only while that advanced editor is open.
+
+### Motion editing, curves and geographic areas (v0.5.0)
+
+- Drag timeline diamonds to retime views with frame snapping. Shift selects multiple keys. A drag is one undo step; use the timeline undo/redo buttons or Ctrl/Cmd+Z / Shift+Ctrl/Cmd+Z while focused in the timeline. Duplicate selected keys at a free playhead time or delete them. Focused diamonds support arrow-key nudging, with Shift for ten frames. Zoom the timeline to work on short intervals. Drag the upper timeline divider to resize its dock.
+- Select a departing key, then press **G / Editor de curvas**. Drag the two Bézier handles or edit X1/Y1/X2/Y2. Linear, smooth, ease-in, ease-out and hold remain available. This docked curve controls the whole camera-view transition; the same sampler is used for preview and export.
+- **Enviar vistas ao Theatre.js** saves a local scene, converts the six camera/route channels into native Theatre tracks, and reloads into the Studio. Click a segment for Tween or a track graph icon for the native curve graph. Conversion replaces previous native Map tracks and keeps the original view keys. After closing Studio, the docked transport plays Theatre tracks while **Usar vistas na exportação** is off. Turn it on to return to the original view animation; native edits are not reverse-converted into views. Saving a scene preserves both sets. Native Studio retains the library's own panel layout; the default editor and its Bézier graph remain docked.
+- Open **Elementos → Países, cidades e regiões**. The local catalog contains 177 Natural Earth country/territory features with Portuguese names. Search for Brasil/Portugal/ISO code and choose **Preencher**. For municipal or regional boundaries, use **Cidade / região**, enter a qualified name and explicitly submit. Results with actual polygon geometry can be added, colored, outlined and labeled. Nominatim availability and returned administrative definitions vary.
+- Selected polygons have independent fill and outline switches/colors plus highlight, outline-only and solid presets. These styles survive save/reopen and basemap changes.
+- The Pin tab lists all pins with visibility and framing. New city callouts use a leader, target dot and rounded text box. Labels expand with text width. Presets, font size, border, opacity, coordinates, duplication and the existing drag controls are available.
+
+Country catalog data is generalized **Natural Earth 1:110m**, suitable for world-scale graphics rather than close-up borders. See [implementation references](docs/MOTION_AND_GEOGRAPHY.md).
 
 ### Camera timeline and map styling
 
@@ -39,9 +50,9 @@ The existing React + MapLibre + Theatre.js editor now includes:
 - A geographic feature browser: import WGS84 GeoJSON points, lines, polygons and multi geometries; filter, select, frame, hide and delete elements.
 - Per-feature color, opacity, outline width and point radius, preserved when switching basemaps.
 - Labels from selected features and conversion of a LineString into the animated route (the **Rota** value on each camera view).
-- Numeric longitude, latitude, zoom, pitch and bearing controls. Use **Capture** to write the current view to Theatre.
+- Numeric longitude, latitude, zoom, pitch and bearing controls. Use **K / Capturar vista** to record the current camera in the docked timeline.
 - **Salvar projeto** downloads a versioned JSON file containing map settings, camera, pins, route, feature styles and Theatre timeline, and stores a browser-local copy. **Abrir arquivo** or **Reabrir local** replaces the scene and reloads the editor. Save the current scene first.
-- Visible provider attribution in the preview and composited into exported frames. Geocoding runs on Enter with a session cache and request queue.
+- Provider attribution in the editor footer and composited into exported frames. Geocoding runs on Enter with a session cache and request queue.
 
 See [the reference research and implementation roadmap](docs/GEOLAYERS_RESEARCH.md) for official documentation, a capability comparison with GEOlayers 3, limitations and the path toward an independent After Effects bridge. This remains a browser application; it does not yet generate native After Effects layers or 3D terrain.
 
@@ -52,7 +63,7 @@ See [the reference research and implementation roadmap](docs/GEOLAYERS_RESEARCH.
 3. Select the example LineString and click **Animar rota**. Set **Rota** to 0 on the first captured view and 1 on the final view.
 4. Save the project and reopen it to continue editing the same timeline.
 
-GeoJSON exports preserve source properties. Save a MapAnimator project to retain styles and visibility. Files are validated before import (10 MB and 5000 features per GeoJSON). GeometryCollection and projected coordinate systems are not supported. Polygon labels use bounding-box centers; drag the label if necessary. Framing across the antimeridian needs further work.
+GeoJSON exports preserve source properties. Save a MapAnimator project to retain styles and visibility. Files are validated before import (10 MB and 5000 features per GeoJSON). GeometryCollection and projected coordinate systems are not supported. Country labels use Natural Earth label coordinates where available; other polygon labels use bounding-box centers; drag the label if necessary. Framing across the antimeridian needs further work.
 
 Public Nominatim is appropriate only for moderate usage. The local request queue cannot enforce the provider's aggregate application-wide limit across users. A production rollout with more users needs a shared limiter or a suitable provider. The compatible search endpoint can be changed through the localStorage key `mapanimator.geocoder`.
 

@@ -1,3 +1,14 @@
+## v0.5.0 — 23/10/2026
+
+- **29 testes passaram em seis suites**, incluindo interações React: arraste/desfazer/refazer, alças Bézier, redimensionamento por pointer/teclado e transporte/captura no playhead nativo Theatre. A revisão final corrigiu os botões de frame para usarem o tempo nativo no modo Theatre.
+- Build final de produção concluído: main.b8789a63.js, cerca de 597,29 kB gzip. Permanecem avisos de dependências dinâmicas e tamanho do bundle; sem falha de compilação.
+- Testes de lógica cobrem retiming com snap/colisão/grupo, Bézier e hold, conversão de seis tracks com ângulos pelo caminho curto, geometria dos 177 países e territórios, preenchimento/contorno independente e dimensões de callouts.
+- Navegador na implementação anterior à retomada: dois keyframes de zoom 12/10 em 0/3 s; arraste final para 2,53 s e desfazer em uma operação. Alterar Y1 para 0,8 gerou zoom 10,4 em 1,5 s. Brasil foi carregado do catálogo e preenchido.
+- Conversão para Theatre abriu as seis tracks; o editor Tween mostrou os handles convertidos e o gráfico por propriedade abriu. Editar a curva de zoom para smooth fez o transporte fixo mostrar zoom 11 em 1,5 s, inclusive após salvar/reabrir.
+- Consulta real de Campinas via Nominatim retornou polígonos. Área adicionada/preenchida, rótulo com linha de chamada, nome longo, visibilidade, duplicação e presets verificados; cena reaberta com dois elementos e dois pins.
+- Na retomada de 23/10 o navegador de testes não iniciou devido a erro do inicializador no volume E: (estrutura do disco ilegível), repetido após reset. O terminal alternativo permitiu concluir testes/build/publicação. A revisão visual final e os breakpoints responsivos deste build não foram repetidos; o divisor de timeline foi validado por teste de interação React.
+- Exportação PNG/MP4 e interação touch de mapa não foram revalidadas nesta versão. Vistas e Theatre são modos separados; a conversão preserva as vistas e substitui tracks nativas de câmera, sem conversão inversa das edições nativas. Limites e referências em docs/MOTION_AND_GEOGRAPHY.md.
+
 ## v0.4.1 — pins e créditos
 
 - 19 testes passaram em quatro suites. Novos testes verificam limites de labels longos, offsets negativos/abaixo do pin e dimensões independentes de densidade da tela.

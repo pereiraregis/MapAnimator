@@ -5,14 +5,15 @@ import MaplibreGeocoder from '@maplibre/maplibre-gl-geocoder';
 import '@maplibre/maplibre-gl-geocoder/dist/maplibre-gl-geocoder.css';
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { toBlobURL } from '@ffmpeg/util';
-import { getProject, types } from '@theatre/core';
+import { getProject, types, onChange } from '@theatre/core';
 import studio from '@theatre/studio';
 import JSZip from 'jszip';
 import FeatureBrowser from './FeatureBrowser';
 import CameraTimeline from './CameraTimeline';
 import ShortcutHelp from './ShortcutHelp';
 import { shortcutAction } from './shortcuts';
-import { createPinImage } from './geo/pins';
+import { viewsToTheatre } from './geo/theatre';
+import { createPinImage, PIN_PRESETS } from './geo/pins';
 import { sampleCamera } from './geo/animation';
 import { BASEMAP_DEFAULTS, isBasemapLayer, applyBasemap } from './geo/basemap';
 import { featureBounds } from './geo/features';
@@ -22,6 +23,8 @@ import { STORAGE_KEY, REOPEN_KEY, readReopenedScene, validateScene, downloadJSON
 import './workspace.css';
 
 const reopenedScene = readReopenedScene();
+const openNativeStudio = sessionStorage.getItem('mapanimator.openStudio') === 'yes';
+sessionStorage.removeItem('mapanimator.openStudio');
 studio.initialize({ usePersistentStorage: !reopenedScene });
 studio.ui.hide();
 const project = getProject('MapAnimator v2', reopenedScene ? { state: reopenedScene.theatre } : undefined);
@@ -112,9 +115,13 @@ function App() {
   }, []);
   const [projectName, setProjectName] = useState(reopenedScene?.name || 'Main Scene');
   const [cameraView, setCameraView] = useState(reopenedScene?.camera || { lng: -46.633, lat: -23.550, zoom: 12, pitch: 0, bearing: 0 });
-  const [waypoints, setWaypoints] = useState(reopenedScene?.waypoints || []);
-  const [waypointMode, setWaypointMode] = useState(reopenedScene?.cameraMode === 'waypoints');
+  const [waypoints, setWaypoints] = useState(() => (reopenedScene?.waypoints || []).map(p => ({ ...p, id: p.id || crypto.randomUUID() })));
+  const [nativeStudio, setNativeStudio] = useState(openNativeStudio);
+  const [nativeTime, setNativeTime] = useState(0), [nativePlaying, setNativePlaying] = useState(false);
+  useEffect(() => onChange(sheet.sequence.pointer.position, setNativeTime), []);
+  const [waypointMode, setWaypointMode] = useState(reopenedScene ? reopenedScene.cameraMode === 'waypoints' : true);
   const [timelineVisible, setTimelineVisible] = useState(true);
+  const [timelineHeight, setTimelineHeight] = useState(284);
   const [appearance, setAppearance] = useState(reopenedScene?.appearance || { ...BASEMAP_DEFAULTS });
   const [styleURL, setStyleURL] = useState('');
   const basemapOriginals = useRef([]), appearanceRef = useRef(appearance), animationModeRef = useRef(false);
@@ -175,13 +182,14 @@ function App() {
 
   const syncPinsLayer = useCallback(() => {
     if (map.current?.getSource('pins-source')) {
-      const features = pinsRef.current.map(p => ({
+      const features = pinsRef.current.filter(p => p.visible !== false).map(p => ({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
         properties: {
           id: p.id,
           imageId: `pin-${p.id}`,
           iconOffset: p.iconOffset || [0, 3],
+          opacity: p.opacity ?? 1,
           text: p.text || '',
           textScale: p.textScale || 1,
           textOffsetX: p.textOffsetX || 0,
@@ -217,7 +225,8 @@ function App() {
           'icon-ignore-placement': true,
           'icon-anchor': 'bottom',
           'icon-offset': ['get', 'iconOffset']
-        }
+        },
+        paint: { 'icon-opacity': ['get', 'opacity'] }
       });
 
       // Labels are rasterized into each icon; a second symbol layer would
@@ -358,6 +367,7 @@ function App() {
       pathProgress: types.number(1, { range: [0, 1] }),
     });
 
+    project.ready.then(() => { if (openNativeStudio) { studio.setSelection([mapObj.current]); studio.ui.restore(); } });
     const unsubscribe = mapObj.current.onValuesChange(v => {
       if (!map.current || animationModeRef.current) return;
       const lng = typeof v.lng === 'number' ? v.lng : map.current.getCenter().lng;
@@ -388,11 +398,14 @@ function App() {
   }, [syncPinsLayer]);
 
   const updatePin = async (id, field, value) => {
-    const isFloat = ['scale', 'textScale'].includes(field);
+    const isFloat = ['scale', 'textScale', 'fontSize', 'strokeWidth', 'opacity'].includes(field);
     const isInt = ['textOffsetX', 'textOffsetY'].includes(field);
     let val = value;
     if (isFloat) val = parseFloat(value);
     if (isInt) val = parseInt(value, 10);
+    if (field === 'text') val = value.slice(0, 500);
+    if (field === 'scale') val = Math.min(3, Math.max(.5, val));
+    if (field === 'textScale') val = Math.min(5, Math.max(.5, val));
     if ((isFloat || isInt || ['lng', 'lat'].includes(field)) && !Number.isFinite(Number(val))) return;
     if (['lng', 'lat'].includes(field)) val = Number(value);
     if (field === 'lng' && (val < -180 || val > 180)) return;
@@ -411,7 +424,7 @@ function App() {
     const c = map.current.getCenter();
     const p = {
       id: crypto.randomUUID(), lng: c.lng, lat: c.lat, text: 'Pin', color: '#ec4899',
-      scale: 1.0, style: 'bubble', textScale: 1, textOffsetX: 0, textOffsetY: 0,
+      scale: 1.0, ...PIN_PRESETS[0], visible: true, opacity: 1, textScale: 1, textOffsetX: 0, textOffsetY: 0,
       textColor: '#ffffff', fontFamily: 'Inter, sans-serif', marker: null
     };
     pinsRef.current = [...pinsRef.current, p];
@@ -510,23 +523,27 @@ function App() {
 
   const labelFeature = async item => {
     const b = featureBounds(item.feature);
-    const p = { id: crypto.randomUUID(), lng: (b[0][0] + b[1][0]) / 2, lat: (b[0][1] + b[1][1]) / 2,
-      text: item.name, color: item.style.color, scale: 1, style: 'bubble', textScale: 1,
+    const p = { id: crypto.randomUUID(), lng: Number.isFinite(item.feature.properties.label_lng) ? item.feature.properties.label_lng : (b[0][0] + b[1][0]) / 2, lat: Number.isFinite(item.feature.properties.label_lat) ? item.feature.properties.label_lat : (b[0][1] + b[1][1]) / 2,
+      text: item.name, ...PIN_PRESETS[0], scale: 1, visible: true, opacity: 1, textScale: 1,
       textOffsetX: 0, textOffsetY: 0, textColor: '#ffffff', fontFamily: 'Inter, sans-serif' };
     pinsRef.current = [...pinsRef.current, p];
     setPins([...pinsRef.current]); await createPinMarker(p);
+    setActivePinId(p.id); setRightTab('pin'); setBrowserVisible(true); if (compact) setMobilePane('features');
     setStatus('Rótulo adicionado. Arraste o pin para ajustar a posição.');
   };
 
-  const saveScene = () => {
-    try {
-      const c = map.current.getCenter();
-      const scene = validateScene({ format: 'MapAnimator', version: 1, name: projectName,
+  const sceneSnapshot = () => {
+    const c = map.current.getCenter();
+    return validateScene({ format: 'MapAnimator', version: 1, name: projectName,
         settings, pins: pinsRef.current.map(({ marker, ...pin }) => pin), features,
         waypoints, cameraMode: waypointMode ? 'waypoints' : 'theatre', appearance,
         route: customPathCoords.current, camera: { lng: c.wrap().lng, lat: c.lat, zoom: map.current.getZoom(), pitch: map.current.getPitch(), bearing: map.current.getBearing() },
         theatre: studio.createContentOfSaveFile(project.address.projectId),
       });
+  };
+  const saveScene = () => {
+    try {
+      const scene = sceneSnapshot();
       downloadJSON(`${projectName.replace(/[^\p{L}\p{N}_-]/gu, '_') || 'scene'}.mapanimator.json`, scene);
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(scene)); } catch { setStatus('Arquivo salvo. Sem espaço para a cópia local.'); return; }
       setStatus('Projeto e timeline salvos; uma cópia local também está disponível.');
@@ -549,6 +566,36 @@ function App() {
     } catch (err) { setStatus(`Projeto: ${err.message}`); }
   };
 
+  const nativePause = () => { sheet.sequence.pause(); setNativePlaying(false); };
+  const nativeSeek = value => { nativePause(); sheet.sequence.position = value; };
+  const nativePlay = () => {
+    if (nativePlaying) { nativePause(); return; }
+    if (sheet.sequence.position >= settings.exportDuration) sheet.sequence.position = 0;
+    setNativePlaying(true); sheet.sequence.play({ range: [0, settings.exportDuration] }).then(() => setNativePlaying(false)).catch(err => { setNativePlaying(false); setStatus(err.message); });
+  };
+  const showTheatre = () => {
+    timelineRef.current?.pause();
+    if (waypointMode && waypoints.length) {
+      try {
+        const scene = sceneSnapshot();
+        scene.theatre = viewsToTheatre(waypoints, settings.exportDuration, settings.fps, scene.theatre);
+        scene.cameraMode = 'theatre';
+        sessionStorage.setItem('mapanimator.openStudio', 'yes');
+        reopenScene(scene);
+      } catch (err) { setStatus(`Theatre: ${err.message}`); }
+      return;
+    }
+    setWaypointMode(false); setNativeStudio(true); studio.setSelection([mapObj.current]); studio.ui.restore();
+  };
+  const closeTheatre = () => { sheet.sequence.pause(); studio.ui.hide(); setNativeStudio(false); setStatus('Modo Theatre ativo. As curvas editadas serão usadas na exportação. Use a timeline para voltar às vistas.'); };
+  const duplicatePin = pin => {
+    const p = { ...pin, id: crypto.randomUUID(), lng: ((pin.lng + .001 + 180) % 360) - 180, text: `${pin.text} cópia` };
+    pinsRef.current = [...pinsRef.current, p]; createPinMarker(p); setPins([...pinsRef.current]); setActivePinId(p.id);
+  };
+  const presetPin = (id, preset) => {
+    const p = { ...pinsRef.current.find(pin => pin.id === id), ...preset, textScale: 1, textOffsetX: 0, textOffsetY: 0 };
+    pinsRef.current = pinsRef.current.map(pin => pin.id === id ? p : pin); createPinMarker(p); setPins([...pinsRef.current]);
+  };
   const captureCamera = () => {
     if (!map.current) return null;
     const c = map.current.getCenter();
@@ -575,7 +622,7 @@ function App() {
     if (item) focusFeature(item.feature); else setStatus('Selecione um elemento para enquadrar.');
   };
   shortcutsRef.current = {
-    disabled: isRendering,
+    disabled: isRendering || nativeStudio,
     play: () => timelineRef.current?.play(), capture: () => timelineRef.current?.capture(),
     back: () => timelineRef.current?.step(-1), forward: () => timelineRef.current?.step(1),
     backTen: () => timelineRef.current?.step(-10), forwardTen: () => timelineRef.current?.step(10),
@@ -584,6 +631,7 @@ function App() {
     draw: () => { timelineRef.current?.pause(); setIsDrawing(true); }, select: () => setIsDrawing(false),
     pin: addPin, fit: fitSelection, north: () => map.current?.easeTo({ bearing: 0, duration: 300 }),
     save: saveScene, open: () => projectInput.current?.click(), help: showHelp,
+    curves: () => { setTimelineVisible(true); timelineRef.current?.curves(); },
     timeline: () => setTimelineVisible(v => !v),
     controls: () => activatePane('controls'), map: () => activatePane('map'), features: () => activatePane('features'),
     focus: () => { const show = !panelVisible && !browserVisible; setPanelVisible(show); setBrowserVisible(show); setMobilePane('map'); },
@@ -602,9 +650,9 @@ function App() {
 
   /* ── Render ── */
   return (
-    <div className={`app-container ${timelineVisible ? 'with-timeline' : ''}`} style={{ '--left-width': panelVisible ? 'var(--panel-left-size)' : '0px', '--right-width': browserVisible ? 'var(--panel-right-size)' : '0px', '--timeline-height': timelineVisible ? 'var(--timeline-size)' : '0px' }}>
+    <div className={`app-container ${timelineVisible ? 'with-timeline' : ''}`} style={{ '--left-width': panelVisible ? 'var(--panel-left-size)' : '0px', '--right-width': browserVisible ? 'var(--panel-right-size)' : '0px', '--timeline-height': timelineVisible ? `min(65vh, ${timelineHeight}px)` : '0px' }}>
       <header className="workspace-bar">
-        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.4.1</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
+        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.5.0</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
         <input aria-label="Nome do projeto" value={projectName} onChange={e => setProjectName(e.target.value)} />
         <nav className="workspace-navigation" aria-label="Áreas do editor">
           <button title="Controles (1)" aria-pressed={compact ? mobilePane === 'controls' : panelVisible} onClick={() => activatePane('controls')}>Controles</button>
@@ -618,9 +666,10 @@ function App() {
         <button title="Atalhos (?)" aria-keyshortcuts="?" onClick={showHelp}>?</button>
         <input ref={projectInput} hidden type="file" accept=".json" onChange={openSceneFile} />
       </header>
+      {nativeStudio && <div className="native-studio-bar"><strong>THEATRE.JS · EDITOR NATIVO</strong><span>Map → propriedades sequenciadas · Clique no segmento para Tween ou no ícone da track para curvas. Salvar preserva as edições.</span><button onClick={saveScene}>Salvar</button><button onClick={closeTheatre}>Fechar Studio</button></div>}
       <CameraTimeline ref={timelineRef} visible={timelineVisible} fps={settings.fps} points={waypoints} setPoints={setWaypoints} duration={settings.exportDuration}
         onDuration={exportDuration => setSettings(s => ({ ...s, exportDuration }))} onSeek={seekCamera} onCapture={captureCamera}
-        enabled={waypointMode} onEnabled={setWaypointMode} disabled={isRendering} onStatus={setStatus} />
+        onResize={setTimelineHeight} onTheatre={showTheatre} nativeSeek={nativeSeek} nativePlay={nativePlay} nativePause={nativePause} nativeTime={nativeTime} nativePlaying={nativePlaying} enabled={waypointMode} onEnabled={value => { nativePause(); setWaypointMode(value); }} disabled={isRendering} onStatus={setStatus} />
       <footer className="workspace-status"><span role="status">{status}</span><div ref={creditsContainer} className="map-credits" aria-label="Créditos do mapa" /><span className="status-hint">Espaço · Play/Pause <span>◇ K · Capturar</span> <span>? · Atalhos</span></span></footer>
       {(compact ? mobilePane === 'features' : browserVisible) && <aside className="geographic-panel" aria-label="Navegador e propriedades">
         <nav className="inspector-tabs" aria-label="Painel direito">
@@ -633,6 +682,7 @@ function App() {
           onRoute={item => { customPathCoords.current = item.feature.geometry.coordinates.map(p => [...p]); syncPathLayer(); setStatus('Rota pronta. Ajuste Rota de 0 a 1 nas vistas da timeline.'); }} />
           </>}
           {rightTab === 'pin' && <>
+            <div className="pin-library" aria-label="Lista de pins">{pins.map(pin => <div key={pin.id} className={pin.id === activePinId ? 'selected' : ''}><input type="checkbox" aria-label={`Mostrar pin ${pin.text}`} checked={pin.visible !== false} onChange={e => updatePin(pin.id, 'visible', e.target.checked)} /><button onClick={() => setActivePinId(pin.id)}><span style={{ background: pin.color }} />{pin.text || 'Sem nome'}</button><button aria-label={`Enquadrar pin ${pin.text}`} onClick={() => map.current?.easeTo({ center: [pin.lng, pin.lat], duration: 500 })}>⌖</button></div>)}</div>
             <div className="feature-actions"><button onClick={addPin}>+ Adicionar pin · P</button>{activePinId !== null && <button onClick={() => removePin(activePinId)}>Excluir pin</button>}</div>
 
       {activePinId !== null && pins.find(p => p.id === activePinId) && (() => {
@@ -642,6 +692,8 @@ function App() {
             title={`PIN · ${p.text || 'Sem nome'}`}
             visible={true}
           >
+            <div className="pin-presets">{PIN_PRESETS.map(preset => <button key={preset.name} onClick={() => presetPin(p.id, preset)}>{preset.name}</button>)}</div>
+            <div className="feature-actions"><button onClick={() => duplicatePin(p)}>Duplicar pin</button></div>
             <div style={{ padding: '8px 0' }}>
               <div className="prop-row"><label htmlFor="pin-label">Texto</label><input id="pin-label" value={p.text} onChange={e => updatePin(p.id, 'text', e.target.value)} style={{ width: '60%' }} /></div>
               <div className="prop-row"><label htmlFor="pin-color">Cor do pin</label><input id="pin-color" type="color" value={p.color} onChange={e => updatePin(p.id, 'color', e.target.value)} /></div>
@@ -651,7 +703,8 @@ function App() {
               <div className="prop-row">
                 <label>Estilo</label>
                 <select value={p.style} onChange={e => updatePin(p.id, 'style', e.target.value)}>
-                  <option value="bubble">Bubble</option>
+                  <option value="callout">Chamada com linha</option>
+                  <option value="bubble">Etiqueta</option>
                   <option value="classic">Pin</option>
                   <option value="square">Square</option>
                   <option value="flag">Flag</option>
@@ -662,7 +715,11 @@ function App() {
                 <label>Escala do pin</label>
                 <input type="number" min="0.5" max="3" step="0.1" value={p.scale} onChange={e => updatePin(p.id, 'scale', e.target.value)} />
               </div>
-              <div className="prop-hint">Texto do pin</div>
+              <div className="prop-row"><label htmlFor="pin-outline">Contorno</label><input id="pin-outline" type="color" value={p.strokeColor || '#ffffff'} onChange={e => updatePin(p.id, 'strokeColor', e.target.value)} /></div>
+              <div className="prop-row"><label htmlFor="pin-stroke">Espessura</label><input id="pin-stroke" type="number" min="0" max="10" step="0.5" value={p.strokeWidth ?? 2} onChange={e => updatePin(p.id, 'strokeWidth', Math.min(10, Math.max(0, Number(e.target.value))))} /></div>
+              <div className="prop-row"><label htmlFor="pin-opacity">Opacidade</label><input id="pin-opacity" type="range" min="0" max="1" step="0.05" value={p.opacity ?? 1} onChange={e => updatePin(p.id, 'opacity', e.target.value)} /></div>
+              <div className="prop-row"><label htmlFor="pin-fontsize">Texto (px)</label><input id="pin-fontsize" type="number" min="8" max="120" value={p.fontSize || 18} onChange={e => updatePin(p.id, 'fontSize', Math.min(120, Math.max(8, Number(e.target.value))))} /></div>
+              <div className="prop-hint">Texto do pin · largura automática</div>
               <div className="prop-row">
                 <label>Cor do texto</label>
                 <input type="color" value={p.textColor || '#ffffff'} onChange={e => updatePin(p.id, 'textColor', e.target.value)} />

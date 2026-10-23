@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.5.0 — 2026-10-23
+
+- Draggable view keyframes with frame snapping, multi-selection, duplication at the playhead, deletion, undo/redo, keyboard nudging, timeline zoom and a resizable dock.
+- Docked cubic Bézier editor with pointer/keyboard handles and numeric inputs; custom curves and hold interpolation persist in scenes and drive preview/export.
+- Explicit conversion of view animation to native Theatre.js camera/route tracks. Native Tween and per-property graph editor available; docked transport also previews native tracks. Original view keys remain available in a separate mode.
+- Local catalog of 177 Natural Earth country/territory polygons, with Portuguese/English/code search. Explicit Nominatim polygon search for city/region boundaries.
+- Independent fill/outline styles and highlight/outline-only/solid presets.
+- Auto-width pin labels, city callouts with leader/target, rounded tags, visibility, framing, duplication, font size, border and opacity.
+
 ## v0.4.1 — 2026-10-22
 
 - Rebuild custom layers after basemap changes instead of losing pin, route and feature sources during style diffing.

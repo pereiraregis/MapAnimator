@@ -19,11 +19,13 @@ export function validateScene(s) {
     ids.add(item.id);
     const t = item.style;
     if (!t || !/^#[0-9a-f]{6}$/i.test(t.color) || !finiteRange(t.opacity, 0, 1) || !finiteRange(t.width, 1, 20) || !finiteRange(t.radius, 1, 30)) throw new Error('Estilo de elemento inválido.');
+    if ((t.strokeColor !== undefined && !/^#[0-9a-f]{6}$/i.test(t.strokeColor)) || ['fill', 'outline'].some(k => t[k] !== undefined && typeof t[k] !== 'boolean')) throw new Error('Preenchimento ou contorno inválido.');
   });
   const pinIds = new Set();
   s.pins.forEach(p => {
     if ((!Number.isFinite(p.id) && typeof p.id !== 'string') || pinIds.has(p.id) || !finiteRange(p.lng, -180, 180) || !finiteRange(p.lat, -90, 90) || typeof p.text !== 'string' || !/^#[0-9a-f]{6}$/i.test(p.color) || !finiteRange(p.scale, 0.5, 3) || !finiteRange(p.textScale, 0.5, 5) || !finiteRange(p.textOffsetX, -10000, 10000) || !finiteRange(p.textOffsetY, -10000, 10000)) throw new Error('Pin inválido.');
     pinIds.add(p.id);
+    if (p.text.length > 500 || (p.visible !== undefined && typeof p.visible !== 'boolean') || (p.opacity !== undefined && !finiteRange(p.opacity, 0, 1)) || (p.fontSize !== undefined && !finiteRange(p.fontSize, 8, 120)) || (p.strokeWidth !== undefined && !finiteRange(p.strokeWidth, 0, 10)) || (p.strokeColor !== undefined && !/^#[0-9a-f]{6}$/i.test(p.strokeColor))) throw new Error('Estilo de pin inválido.');
   });
   if (s.route.length) normalizeGeoJSON({ type: 'LineString', coordinates: s.route.length === 1 ? [s.route[0], s.route[0]] : s.route });
   if (!s.theatre || typeof s.theatre !== 'object' || s.theatre.definitionVersion !== '0.4.0' || !Array.isArray(s.theatre.revisionHistory) || !s.theatre.sheetsById || typeof s.theatre.sheetsById !== 'object' || Array.isArray(s.theatre.sheetsById)) throw new Error('Timeline inválida.');
