@@ -35,8 +35,8 @@ export function routeHandles(coords, selected) {
 export function animateRouteViews(points, camera, duration, id = () => crypto.randomUUID()) {
   const active = points.filter(p => p.time <= duration).sort((a, b) => a.time - b.time);
   const first = sampleCamera(points, 0) || camera, last = sampleCamera(points, duration) || camera;
-  const result = active.map(p => ({ ...p, pathProgress: p.time / duration }));
-  if (!result.some(p => p.time === 0)) result.unshift({ ...first, id: id(), time: 0, easing: 'linear', pathProgress: 0 });
-  if (!result.some(p => p.time === duration)) result.push({ ...last, id: id(), time: duration, easing: 'linear', pathProgress: 1 });
+  const result = active.map(p => ({ ...p, pathProgress: p.time / duration, ...(p.channels ? { channels: [...new Set([...p.channels, 'pathProgress'])], interpolation: { ...p.interpolation, pathProgress: { easing: 'linear' } } } : {}) }));
+  if (!result.some(p => p.time === 0)) result.unshift({ ...first, id: id(), time: 0, easing: 'linear', pathProgress: 0, ...(points.length ? { channels: ['pathProgress'] } : {}) });
+  if (!result.some(p => p.time === duration)) result.push({ ...last, id: id(), time: duration, easing: 'linear', pathProgress: 1, ...(points.length ? { channels: ['pathProgress'] } : {}) });
   return [...result, ...points.filter(p => p.time > duration)].sort((a, b) => a.time - b.time);
 }

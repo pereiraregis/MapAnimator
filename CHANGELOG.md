@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.6.0 — 2026-10-23
+
+- Replace aggregate view diamonds with six independent property tracks, preserving existing scene animation. Property-only capture, timing, values and interpolation share a sampler across preview, export and Theatre conversion.
+- Multi-key/group dragging, Shift selection, rectangle selection, frame nudging, eight-pixel magnetic snapping, property filtering and playhead-anchored zoom. One gesture is one undo step; same-property move collisions are rejected.
+- Copy/paste with relative timing and destination replacement, duplication at the playhead, selection/deletion and timeline-scoped keyboard shortcuts. Value/time inspector and key context menu.
+- Easy Ease with incoming/outgoing variants, docked per-property Bézier editing and value/absolute-speed graphs. Local preview range and looping; exports retain full duration.
+- Route preparation preserves independent camera keys. Unkeyed camera properties retain their actual values during first capture/paste; deleting a property's last key freezes it at the current value.
+- Record EffectCraft source references and include its MIT notice for the adapted magnetic snapping helper.
+
+
 ## v0.5.1 — 2026-10-23
 
 - Restore route reveal workflow with an explicit Animate Route command that prepares 0%/100% view keys, retaining existing camera view values. Captured views now use the current route progress.
