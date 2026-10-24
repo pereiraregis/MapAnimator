@@ -1,6 +1,8 @@
+mod layer_ui;
+mod upstream_ui;
 use effectcraft_keyframe::{Ease, Interp};
 use eframe::egui::*;
-use mapanimator_core::{BOUNDS, Document, Editor, NAMES, scalar};
+use mapanimator_core::{CatalogLayer, Document, Editor, LayerAnimation, scalar};
 use serde_json::{Value as Json, json};
 use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::prelude::*;
@@ -16,15 +18,68 @@ struct Shared {
     looped: bool,
     range: Option<[f64; 2]>,
     error: String,
+    last_external_animation: Option<Json>,
 }
 impl Shared {
+    fn sync_objects(
+        &mut self,
+        catalog: &[CatalogLayer],
+        animation: &LayerAnimation,
+    ) -> Result<(), String> {
+        let s = self;
+        let incoming = json!(animation);
+        let effective = if s.last_external_animation.as_ref() == Some(&incoming) {
+            s.editor.doc.animation()
+        } else {
+            animation.clone()
+        };
+        s.last_external_animation = Some(incoming);
+        let before = s.editor.doc.clone();
+        s.editor.doc.set_objects(&catalog, &effective)?;
+        if before != s.editor.doc {
+            let structural = before
+                .properties
+                .iter()
+                .map(|p| &p.uid)
+                .collect::<std::collections::BTreeSet<_>>()
+                != s.editor
+                    .doc
+                    .properties
+                    .iter()
+                    .map(|p| &p.uid)
+                    .collect::<std::collections::BTreeSet<_>>();
+            if structural {
+                s.editor.undo.clear();
+                s.editor.redo.clear();
+                s.editor.selected.clear();
+            } else {
+                for snapshot in s.editor.undo.iter_mut() {
+                    let animation = snapshot.animation();
+                    snapshot.set_objects(&catalog, &animation)?;
+                }
+                for snapshot in s.editor.redo.iter_mut() {
+                    let animation = snapshot.animation();
+                    snapshot.set_objects(&catalog, &animation)?;
+                }
+            }
+            s.playing = false;
+        }
+        let normalized = s.editor.doc.animation();
+        if json!(normalized) != json!(animation) {
+            s.events
+                .push(json!({"type":"layerAnimation","animation":normalized}));
+        }
+        Ok(())
+    }
     fn seek(&mut self, t: f64) {
         self.editor.time = t.clamp(0., self.editor.duration);
-        self.events.push(json!({"type":"seek","time":self.editor.time,"values":self.editor.doc.sample(self.editor.time)}));
+        self.events.push(json!({"type":"seek","time":self.editor.time,"values":self.editor.doc.sample(self.editor.time),"layers":self.editor.doc.sample_objects(self.editor.time),"cameraAnimated":self.editor.doc.tracks.iter().take(5).any(|t|!t.is_empty()),"routeAnimated":!self.editor.doc.tracks[5].is_empty()||self.editor.doc.base[5]!=1.||self.editor.doc.layers.iter().any(|l|l.id=="route"&&(l.muted||l.start>0.||l.end<600.))}));
     }
     fn emit(&mut self) {
         self.events
             .push(json!({"type":"points","points":self.editor.doc.to_legacy()}));
+        self.events
+            .push(json!({"type":"layerAnimation","animation":self.editor.doc.animation()}));
         self.seek(self.editor.time);
     }
     fn cmd(&mut self, c: Json) {
@@ -86,8 +141,20 @@ impl Shared {
             "curves" => self.curves = !self.curves,
             "capture_request" => {
                 if !self.disabled {
-                    self.events
-                        .push(json!({"type":"capture","channels":c["channels"]}));
+                    let channels: Vec<usize> =
+                        serde_json::from_value(c["channels"].clone()).unwrap_or((0..6).collect());
+                    let properties: Vec<_> = channels
+                        .iter()
+                        .filter_map(|i| self.editor.doc.properties.get(*i).map(|p| p.uid.clone()))
+                        .collect();
+                    let values = self.editor.doc.sample_all(self.editor.time);
+                    let mut data = serde_json::Map::new();
+                    for i in channels {
+                        if let Some(p) = self.editor.doc.properties.get(i) {
+                            data.insert(p.uid.clone(), json!(values[i]));
+                        }
+                    }
+                    self.events.push(json!({"type":"capture","channels":c["channels"],"properties":properties,"propertyValues":data}));
                 }
             }
             _ => {
@@ -131,6 +198,27 @@ impl Sampler {
     }
     pub fn sample(&self, time: f64) -> String {
         json!(self.doc.sample(time)).to_string()
+    }
+}
+#[wasm_bindgen]
+pub struct SceneSampler {
+    doc: Document,
+}
+#[wasm_bindgen]
+impl SceneSampler {
+    #[wasm_bindgen(constructor)]
+    pub fn new(points: &str, catalog: &str, animation: &str) -> Result<SceneSampler, JsValue> {
+        let p = serde_json::from_str(points).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let c: Vec<CatalogLayer> =
+            serde_json::from_str(catalog).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let a: LayerAnimation =
+            serde_json::from_str(animation).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let mut doc = Document::from_legacy(&p).map_err(|e| JsValue::from_str(&e))?;
+        doc.set_objects(&c, &a).map_err(|e| JsValue::from_str(&e))?;
+        Ok(Self { doc })
+    }
+    pub fn sample(&self, time: f64) -> String {
+        json!({"values":self.doc.sample(time),"layers":self.doc.sample_objects(time),"cameraAnimated":self.doc.tracks.iter().take(5).any(|t|!t.is_empty()),"routeAnimated":!self.doc.tracks[5].is_empty()||self.doc.base[5]!=1.||self.doc.layers.iter().any(|l|l.id=="route"&&(l.muted||l.start>0.||l.end<600.))}).to_string()
     }
 }
 #[cfg(target_arch = "wasm32")]
@@ -182,8 +270,13 @@ impl TimelineRunner {
             return Err(JsValue::from_str("Configuração inválida"));
         }
         let input = serde_json::from_str(points).map_err(|e| JsValue::from_str(&e.to_string()))?;
-        let doc = Document::from_legacy(&input).map_err(|e| JsValue::from_str(&e))?;
+        let camera = Document::from_legacy(&input).map_err(|e| JsValue::from_str(&e))?;
         let mut s = self.shared.borrow_mut();
+        let mut doc = s.editor.doc.clone();
+        for c in 0..6 {
+            doc.tracks[c] = camera.tracks[c].clone();
+            doc.base[c] = camera.base[c];
+        }
         if s.editor.doc != doc {
             s.editor.doc = doc;
             s.editor.undo.clear();
@@ -198,6 +291,17 @@ impl TimelineRunner {
         if disabled || !enabled {
             s.playing = false;
         }
+        Ok(())
+    }
+    pub fn set_objects(&self, catalog: &str, animation: &str) -> Result<(), JsValue> {
+        let catalog: Vec<CatalogLayer> =
+            serde_json::from_str(catalog).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let animation: LayerAnimation =
+            serde_json::from_str(animation).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        self.shared
+            .borrow_mut()
+            .sync_objects(&catalog, &animation)
+            .map_err(|e| JsValue::from_str(&e))?;
         Ok(())
     }
     pub fn configure(&self, duration: f64, fps: f64, enabled: bool, disabled: bool) {
@@ -219,6 +323,10 @@ impl TimelineRunner {
         self.shared.borrow_mut().cmd(c);
         Ok(())
     }
+    pub fn snapshot(&self) -> String {
+        let s = self.shared.borrow();
+        json!({"points":s.editor.doc.to_legacy(),"animation":s.editor.doc.animation()}).to_string()
+    }
     pub fn take_events(&self) -> String {
         json!(std::mem::take(&mut self.shared.borrow_mut().events)).to_string()
     }
@@ -239,6 +347,11 @@ struct TimelineUi {
     marquee: Option<(Pos2, std::collections::BTreeSet<String>)>,
     curve_drag: bool,
     filter: String,
+    collapsed: std::collections::BTreeSet<String>,
+    known: std::collections::BTreeSet<String>,
+    active_layer: Option<String>,
+    bar_drag: Option<(String, u8, f32, f64, f64)>,
+    animated_only: bool,
 }
 impl TimelineUi {
     fn new(shared: Rc<RefCell<Shared>>) -> Self {
@@ -254,6 +367,11 @@ impl TimelineUi {
             marquee: None,
             curve_drag: false,
             filter: String::new(),
+            collapsed: Default::default(),
+            known: Default::default(),
+            active_layer: None,
+            bar_drag: None,
+            animated_only: false,
         }
     }
     fn action(s: &mut Shared, op: &str) {
@@ -268,10 +386,14 @@ impl TimelineUi {
             match event {
                 Event::Copy => Self::action(s, "copy"),
                 Event::Paste(text) => {
+                    if text.len() > 2_000_000 {
+                        s.error = "Clipboard grande demais".into();
+                        continue;
+                    }
                     if let Ok(clip) =
-                        serde_json::from_str::<Vec<(usize, mapanimator_core::Key)>>(&text)
+                        serde_json::from_str::<Vec<(String, mapanimator_core::Key)>>(&text)
                     {
-                        if clip.len() <= 3000 && clip.iter().all(|(c, _)| *c < 6) {
+                        if clip.len() <= 3000 && clip.iter().all(|(c, _)| c.len() <= 300) {
                             s.editor.clipboard = clip;
                             Self::action(s, "paste");
                         }
@@ -286,7 +408,7 @@ impl TimelineUi {
                 } => {
                     let m = modifiers.command || modifiers.ctrl;
                     match key{
-                Key::Space=>Self::action(s,"play"),Key::K=>Self::action(s,"capture_request"),Key::G=>s.curves=!s.curves,
+                Key::Space if !m && !modifiers.alt=>Self::action(s,"play"),Key::K if !m && !modifiers.alt=>Self::action(s,"capture_request"),Key::G if !m && !modifiers.alt=>s.curves=!s.curves,Key::U if !m && !modifiers.alt=>self.animated_only=!self.animated_only,
                 Key::Delete|Key::Backspace=>Self::action(s,"delete"),
                 Key::A if m=>s.editor.selected=s.editor.doc.tracks.iter().flatten().map(|k|k.id.clone()).collect(),
                 Key::Z if m=>Self::action(s,if modifiers.shift{"redo"}else{"undo"}),
@@ -306,7 +428,7 @@ impl TimelineUi {
     fn toolbar(&mut self, ui: &mut Ui, s: &mut Shared) {
         ui.horizontal_wrapped(|ui| {
             ui.strong("TIMELINE");
-            ui.weak("Rust · egui / EffectCraft");
+            ui.weak("Camadas e propriedades");
             if ui
                 .button(if s.playing { "Ⅱ Pausar" } else { "▶ Play" })
                 .clicked()
@@ -388,6 +510,10 @@ impl TimelineUi {
                     s.cmd(json!({"op":"ease","mode":mode}));
                 }
             }
+            ui.checkbox(&mut self.animated_only, "Animadas · U");
+            if ui.small_button("Inverter tempo").clicked() {
+                Self::action(s, "reverse");
+            }
             ui.add(
                 TextEdit::singleline(&mut self.filter)
                     .hint_text("Filtrar propriedades")
@@ -417,12 +543,49 @@ impl TimelineUi {
     fn tracks(&mut self, ui: &mut Ui, s: &mut Shared) {
         let row = 29.;
         let label = 172.;
+        let mut groups: std::collections::BTreeMap<String, Vec<usize>> = Default::default();
+        for (c, p) in s.editor.doc.properties.iter().enumerate() {
+            groups.entry(p.layer.clone()).or_default().push(c);
+        }
+        let mut rows = Vec::new();
+        let filter = self.filter.to_lowercase();
+        for (li, layer) in s.editor.doc.layers.iter().enumerate() {
+            let channels = groups.get(&layer.id).cloned().unwrap_or_default();
+            if self.known.insert(layer.id.clone())
+                && layer.kind != "camera"
+                && layer.kind != "route"
+                && !channels.iter().any(|c| !s.editor.doc.tracks[*c].is_empty())
+            {
+                self.collapsed.insert(layer.id.clone());
+            }
+            let visible: Vec<_> = channels
+                .into_iter()
+                .filter(|c| {
+                    (!self.animated_only || !s.editor.doc.tracks[*c].is_empty())
+                        && (filter.is_empty()
+                            || layer.name.to_lowercase().contains(&filter)
+                            || s.editor.doc.name(*c).to_lowercase().contains(&filter))
+                })
+                .collect();
+            if visible.is_empty() && (self.animated_only || !filter.is_empty()) {
+                continue;
+            }
+            rows.push((li, None));
+            if !self.collapsed.contains(&layer.id) || !filter.is_empty() || self.animated_only {
+                for c in visible {
+                    rows.push((li, Some(c)));
+                }
+            }
+        }
         let width = ui.available_width().max(label + 120.);
-        let (rect, response) =
-            ui.allocate_exact_size(vec2(width, row * 8.), Sense::click_and_drag());
+        let (rect, response) = ui.allocate_exact_size(
+            vec2(width, row * (rows.len() + 1) as f32),
+            Sense::click_and_drag(),
+        );
         let lane = Rect::from_min_max(pos2(rect.left() + label, rect.top()), rect.max);
         let pps = lane.width() as f64 / (s.editor.duration / self.zoom);
-        let x = |time: f64| lane.left() + ((time - self.start) * pps) as f32;
+        let view_start = self.start;
+        let x = |time: f64| lane.left() + ((time - view_start) * pps) as f32;
         let painter = ui.painter().with_clip_rect(rect);
         painter.rect_filled(rect, 0., Color32::from_rgb(29, 34, 40));
         for i in 0..=8 {
@@ -447,21 +610,35 @@ impl TimelineUi {
         {
             s.cmd(json!({"op":"seek","time":((pos.x-lane.left())as f64/pps+self.start)}));
         }
-        painter.text(
-            pos2(rect.left() + 8., rect.top() + row + 5.),
-            Align2::LEFT_TOP,
-            "▾ Câmera / Rota",
-            FontId::proportional(12.),
-            Color32::LIGHT_GRAY,
-        );
         let mut hits = Vec::new();
         let mut on_key = false;
-        for c in 0..6 {
-            let y = rect.top() + row * (c as f32 + 2.5);
+        for (row_index, (li, channel)) in rows.into_iter().enumerate() {
+            let y = rect.top() + row * (row_index as f32 + 1.5);
+            if y + row * 0.5 < ui.clip_rect().top() || y - row * 0.5 > ui.clip_rect().bottom() {
+                continue;
+            }
+            let layer = s.editor.doc.layers[li].clone();
+            let Some(c) = channel else {
+                on_key |= self.layer_row(
+                    ui,
+                    s,
+                    &painter,
+                    &layer,
+                    Rect::from_min_max(
+                        pos2(rect.left(), y - row * 0.5),
+                        pos2(rect.right(), y + row * 0.5),
+                    ),
+                    lane,
+                    pps,
+                );
+                continue;
+            };
+            let locked = layer.locked;
+            let property_name = s.editor.doc.name(c).to_owned();
             let color = Color32::from_rgb(
-                [233, 120, 227, 130, 190, 100][c],
-                [140, 200, 190, 170, 150, 215][c],
-                [115, 165, 100, 235, 220, 210][c],
+                [233, 120, 227, 130, 190, 100][c % 6],
+                [140, 200, 190, 170, 150, 215][c % 6],
+                [115, 165, 100, 235, 220, 210][c % 6],
             );
             painter.line_segment(
                 [
@@ -479,7 +656,7 @@ impl TimelineUi {
                 FontId::proportional(17.),
                 color,
             );
-            if r.clicked() {
+            if r.clicked() && !locked {
                 s.cmd(json!({"op":"capture_request","channels":[c]}));
             }
             let name = Rect::from_min_max(
@@ -489,7 +666,7 @@ impl TimelineUi {
             painter.text(
                 name.left_center(),
                 Align2::LEFT_CENTER,
-                NAMES[c],
+                property_name.as_str(),
                 FontId::proportional(11.),
                 color,
             );
@@ -497,17 +674,11 @@ impl TimelineUi {
                 .interact(name, ui.id().with(("name", c)), Sense::click())
                 .clicked()
             {
+                self.active_layer = Some(layer.id.clone());
                 s.editor.selected = s.editor.doc.tracks[c]
                     .iter()
                     .map(|k| k.id.clone())
                     .collect();
-            }
-            if !self.filter.is_empty()
-                && !NAMES[c]
-                    .to_lowercase()
-                    .contains(&self.filter.to_lowercase())
-            {
-                continue;
             }
             let keys = s.editor.doc.tracks[c].clone();
             for k in keys {
@@ -518,7 +689,15 @@ impl TimelineUi {
                 let pos = pos2(px, y);
                 let hit = Rect::from_center_size(pos, vec2(17., 23.));
                 hits.push((k.id.clone(), pos));
-                let kr = ui.interact(hit, ui.id().with(&k.id), Sense::click_and_drag());
+                let kr = ui.interact(
+                    hit,
+                    ui.id().with(&k.id),
+                    if locked {
+                        Sense::click()
+                    } else {
+                        Sense::click_and_drag()
+                    },
+                );
                 on_key |= kr.hovered() || kr.dragged();
                 let selected = s.editor.selected.contains(&k.id);
                 draw_key(
@@ -533,11 +712,12 @@ impl TimelineUi {
                 );
                 kr.clone().on_hover_text(format!(
                     "{}: {:.5}\n{:.4}s",
-                    NAMES[c],
+                    property_name.as_str(),
                     scalar(&k.data),
                     k.data.time.seconds()
                 ));
                 if kr.clicked() {
+                    self.active_layer = Some(layer.id.clone());
                     if ui.input(|i| i.modifiers.shift) {
                         if !s.editor.selected.remove(&k.id) {
                             s.editor.selected.insert(k.id.clone());
@@ -590,6 +770,7 @@ impl TimelineUi {
                         ("Copiar", "copy"),
                         ("Colar no cursor", "paste"),
                         ("Excluir", "delete"),
+                        ("Inverter tempo", "reverse"),
                     ] {
                         if ui.button(label).clicked() {
                             Self::action(s, op);
@@ -677,6 +858,7 @@ impl TimelineUi {
         }
     }
     fn inspector(&mut self, ui: &mut Ui, s: &mut Shared) {
+        self.layer_inspector(ui, s);
         let active = s.editor.doc.tracks.iter().enumerate().find_map(|(c, t)| {
             t.iter()
                 .position(|k| s.editor.selected.contains(&k.id))
@@ -687,14 +869,18 @@ impl TimelineUi {
             return;
         };
         ui.horizontal_wrapped(|ui| {
-            ui.strong(NAMES[c]);
+            ui.strong(format!(
+                "{} / {}",
+                s.editor.doc.layer_of(c).name,
+                s.editor.doc.name(c)
+            ));
             let mut value = scalar(&key.data);
             ui.label("Valor");
             if ui
                 .add(
                     DragValue::new(&mut value)
                         .speed(if c == 0 || c == 1 { 0.0001 } else { 0.01 })
-                        .range(BOUNDS[c].0..=BOUNDS[c].1),
+                        .range(s.editor.doc.bounds(c).0..=s.editor.doc.bounds(c).1),
                 )
                 .changed()
             {
@@ -1164,5 +1350,221 @@ mod tests {
             s.borrow().editor.doc.tracks[2][0].data.out_ease[0].speed,
             0.
         );
+    }
+    fn pin_catalog() -> Vec<CatalogLayer> {
+        serde_json::from_value(json!([{"id":"pin:a","name":"Cidade","kind":"pin","values":{"lng":-46.,"lat":-23.,"opacity":1.,"scale":1.,"rotation":0.}}])).unwrap()
+    }
+    fn click(ctx: &Context, view: &mut TimelineUi, s: &Rc<RefCell<Shared>>, p: Pos2, time: f64) {
+        frame(ctx, view, s, vec![Event::PointerMoved(p)], time);
+        frame(
+            ctx,
+            view,
+            s,
+            vec![Event::PointerButton {
+                pos: p,
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: Modifiers::NONE,
+            }],
+            time + 0.01,
+        );
+        frame(
+            ctx,
+            view,
+            s,
+            vec![Event::PointerButton {
+                pos: p,
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: Modifiers::NONE,
+            }],
+            time + 0.02,
+        );
+    }
+    #[test]
+    fn egui_object_tree_capture_and_lock_are_connected_to_property_identity() {
+        let (ctx, mut view, s) = setup();
+        s.borrow_mut()
+            .sync_objects(&pin_catalog(), &LayerAnimation::default())
+            .unwrap();
+        frame(&ctx, &mut view, &s, vec![], 0.);
+        assert!(view.collapsed.contains("pin:a"));
+        click(&ctx, &mut view, &s, pos2(12., 275.5), 0.01);
+        assert!(!view.collapsed.contains("pin:a"));
+        s.borrow_mut().events.clear();
+        click(&ctx, &mut view, &s, pos2(15., 362.5), 0.1);
+        assert!(
+            s.borrow()
+                .events
+                .iter()
+                .any(|e| e["type"] == "capture" && e["properties"] == json!(["pin:a/opacity"]))
+        );
+        click(&ctx, &mut view, &s, pos2(62., 275.5), 0.2);
+        assert!(
+            s.borrow()
+                .editor
+                .doc
+                .layers
+                .iter()
+                .find(|l| l.id == "pin:a")
+                .unwrap()
+                .locked
+        );
+        s.borrow_mut().events.clear();
+        click(&ctx, &mut view, &s, pos2(15., 362.5), 0.3);
+        assert!(!s.borrow().events.iter().any(|e| e["type"] == "capture"));
+    }
+    #[test]
+    fn egui_trim_handle_changes_the_interval_once_without_moving_camera_keys() {
+        let (ctx, mut view, s) = setup();
+        s.borrow_mut()
+            .sync_objects(&pin_catalog(), &LayerAnimation::default())
+            .unwrap();
+        frame(&ctx, &mut view, &s, vec![], 0.);
+        let p = pos2(997., 275.5);
+        let q = pos2(721., 275.5);
+        frame(&ctx, &mut view, &s, vec![Event::PointerMoved(p)], 0.01);
+        frame(
+            &ctx,
+            &mut view,
+            &s,
+            vec![Event::PointerButton {
+                pos: p,
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: Modifiers::NONE,
+            }],
+            0.02,
+        );
+        frame(&ctx, &mut view, &s, vec![Event::PointerMoved(q)], 0.03);
+        frame(
+            &ctx,
+            &mut view,
+            &s,
+            vec![Event::PointerButton {
+                pos: q,
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: Modifiers::NONE,
+            }],
+            0.04,
+        );
+        let b = s.borrow();
+        let layer = b
+            .editor
+            .doc
+            .layers
+            .iter()
+            .find(|l| l.id == "pin:a")
+            .unwrap();
+        assert!((layer.end - 2.).abs() < 0.04);
+        assert_eq!(b.editor.undo.len(), 1);
+        assert_eq!(b.editor.doc.tracks[0][1].data.time.seconds(), 2.);
+    }
+    #[test]
+    fn catalog_refresh_preserves_pending_native_edits_and_rebases_history() {
+        let mut s = Shared {
+            enabled: true,
+            ..Default::default()
+        };
+        let mut catalog = pin_catalog();
+        s.sync_objects(&catalog, &LayerAnimation::default())
+            .unwrap();
+        s.editor.time = 1.;
+        s.cmd(json!({"op":"capture","values":[0.,0.,5.,0.,0.,1.],"properties":["pin:a/opacity"],"propertyValues":{"pin:a/opacity":0.2}}));
+        assert_eq!(s.editor.undo.len(), 1);
+        catalog[0].name = "Renomeada".into();
+        catalog[0].values.insert("opacity".into(), 0.4);
+        s.sync_objects(&catalog, &LayerAnimation::default())
+            .unwrap();
+        assert_eq!(s.editor.doc.animation().tracks.len(), 1);
+        assert_eq!(s.editor.undo.len(), 1);
+        s.cmd(json!({"op":"undo"}));
+        assert!(s.editor.doc.animation().tracks.is_empty());
+        assert_eq!(
+            s.editor
+                .doc
+                .layers
+                .iter()
+                .find(|l| l.id == "pin:a")
+                .unwrap()
+                .name,
+            "Renomeada"
+        );
+    }
+    #[test]
+    fn egui_layer_body_moves_its_keys_with_one_undo() {
+        let (ctx, mut view, s) = setup();
+        s.borrow_mut()
+            .sync_objects(&pin_catalog(), &LayerAnimation::default())
+            .unwrap();
+        for (time, value) in [(1., 1.), (2., 0.)] {
+            s.borrow_mut().editor.time = time;
+            s.borrow_mut().cmd(json!({"op":"capture","values":[0.,0.,5.,0.,0.,1.],"properties":["pin:a/opacity"],"propertyValues":{"pin:a/opacity":value}}));
+        }
+        s.borrow_mut()
+            .cmd(json!({"op":"layer","id":"pin:a","start":1.,"end":2.}));
+        s.borrow_mut().editor.undo.clear();
+        s.borrow_mut().editor.time = 0.;
+        frame(&ctx, &mut view, &s, vec![], 0.);
+        let p = pos2(586., 275.5);
+        let q = p + vec2(138., 0.);
+        frame(&ctx, &mut view, &s, vec![Event::PointerMoved(p)], 0.01);
+        frame(
+            &ctx,
+            &mut view,
+            &s,
+            vec![Event::PointerButton {
+                pos: p,
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: Modifiers::NONE,
+            }],
+            0.02,
+        );
+        frame(
+            &ctx,
+            &mut view,
+            &s,
+            vec![Event::PointerMoved(p + vec2(70., 0.))],
+            0.03,
+        );
+        frame(&ctx, &mut view, &s, vec![Event::PointerMoved(q)], 0.04);
+        frame(
+            &ctx,
+            &mut view,
+            &s,
+            vec![Event::PointerButton {
+                pos: q,
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: Modifiers::NONE,
+            }],
+            0.05,
+        );
+        let b = s.borrow();
+        let anim = b.editor.doc.animation();
+        assert_eq!(anim.tracks[0].keys[0].data.time.seconds(), 1.5);
+        assert_eq!(anim.tracks[0].keys[1].data.time.seconds(), 2.5);
+        assert_eq!(b.editor.undo.len(), 1);
+    }
+    #[test]
+    fn interval_inspector_handles_layers_outside_a_shortened_composition() {
+        let (ctx, mut view, s) = setup();
+        s.borrow_mut()
+            .sync_objects(&pin_catalog(), &LayerAnimation::default())
+            .unwrap();
+        s.borrow_mut()
+            .cmd(json!({"op":"layer","id":"pin:a","start":5.,"end":6.}));
+        view.active_layer = Some("pin:a".into());
+        let mut output = ctx.run_ui(
+            RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1000., 700.))),
+                ..Default::default()
+            },
+            |ui| view.inspector(ui, &mut s.borrow_mut()),
+        );
+        output.textures_delta.clear();
+        assert_eq!(s.borrow().editor.doc.layers.last().unwrap().start, 5.);
     }
 }

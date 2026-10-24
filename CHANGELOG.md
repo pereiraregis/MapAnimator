@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.8.0 — 2026-10-23
+
+- Add Rust layer/property tracks for pins, geographic features and route styling, with stable property identities and saved layer animation.
+- Add layer visibility, locking, bar dragging, in/out trimming, animated-only filtering and native EffectCraft key time reversal. Reuse upstream egui bar/trim helpers alongside existing unmodified keyframe/time crates.
+- Animate pin coordinates/opacity/scale/rotation and feature/route colors, opacity and sizes. Manual edits to animated pins update the current key; object-only animations preserve the camera.
+- Share a compiled scene sampler for preview/export, preserve frozen values after deleting the last key, and read direct native snapshots when saving/exporting. Reapply MapLibre feature states after style changes.
+- Validate with 120 Rust tests, 68 JavaScript tests, two 91-frame compiled WASM sampling flows and production build. Browser visual/media verification remains blocked by CUA volume E: initialization failure. See docs/VALIDATION.md.
+
+
 ## v0.7.0 — 2026-10-23
 
 - First Rust migration stage: the active timeline is an egui canvas compiled to WebAssembly; map and surrounding UI remain MapLibre/React.

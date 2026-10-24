@@ -1,3 +1,4 @@
+import { validateLayerAnimation } from './layerAnimation';
 import { normalizeGeoJSON } from './features';
 import { validateWaypoints } from './animation';
 
@@ -29,6 +30,7 @@ export function validateScene(s) {
   });
   if (s.route.length) normalizeGeoJSON({ type: 'LineString', coordinates: s.route.length === 1 ? [s.route[0], s.route[0]] : s.route });
   if (!s.theatre || typeof s.theatre !== 'object' || s.theatre.definitionVersion !== '0.4.0' || !Array.isArray(s.theatre.revisionHistory) || !s.theatre.sheetsById || typeof s.theatre.sheetsById !== 'object' || Array.isArray(s.theatre.sheetsById)) throw new Error('Timeline inválida.');
+  if (s.layerAnimation !== undefined) validateLayerAnimation(s.layerAnimation);
   if (s.waypoints !== undefined) validateWaypoints(s.waypoints);
   if (s.cameraMode !== undefined && !['waypoints', 'theatre'].includes(s.cameraMode)) throw new Error('Modo de câmera inválido.');
   if (s.appearance && (!['labels', 'roads', 'buildings'].every(k => typeof s.appearance[k] === 'boolean') || !['water', 'land'].every(k => s.appearance[k] === null || /^#[0-9a-f]{6}$/i.test(s.appearance[k])))) throw new Error('Aparência do mapa inválida.');

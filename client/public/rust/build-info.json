@@ -1,8 +1,8 @@
 {
-  "version": "0.7.0",
+  "version": "0.8.0",
   "upstream": "357b4c5bd531f9032ad6dc02937dcc75ab293ee9",
   "bindings": "0.2.129",
   "compiler": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-  "sourceSha256": "2d8152b3af74820c9f694606bc140f2062502be6b18a318cc1f3efcfb2ca0a76",
-  "wasmSha256": "d65b3fa6ed779da39f02107717bba362c5df05692cfeba3581da7b94516d9e88"
+  "sourceSha256": "3361a344c47c3697fa3c0bc2363140acfa4237dbcea61225b5eb769bd848a3ed",
+  "wasmSha256": "fa5d904308c42f523e05f0a45e7c0ffc6fe6024609674602acd8fe43cd410286"
 }

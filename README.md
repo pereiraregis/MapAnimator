@@ -1,18 +1,16 @@
 # Map Animator V2
 
-**Current release: v0.7.0 — Rust timeline migration, stage 1.** [Open the editor](https://pereiraregis.github.io/MapAnimator/) · [Changelog](CHANGELOG.md)
+**Current release: v0.8.0 — layered Rust timeline.** [Open the editor](https://pereiraregis.github.io/MapAnimator/) · [Changelog](CHANGELOG.md)
 
-### Rust / egui timeline (v0.7.0)
+### Rust / egui timeline (v0.8.0)
 
-The active timeline now runs in **Rust + WebAssembly**, using the actual EffectCraft keyframe/time modules. The map and surrounding workspace remain MapLibre/React. Keyframe interpolation, velocity/influence, Auto/Continuous Bézier, commands and undo are handled by the Rust animation editor. The egui panel provides tracks, drag/marquee, transport, context menus and draggable temporal curve handles.
+The active timeline runs in **Rust + WebAssembly**, directly reusing EffectCraft keyframe/time modules. Camera, route, pins and geographic areas now appear as expandable layers with independent animated properties. Pins support position, opacity, scale and rotation; geographic objects and routes support animated colors, opacity and sizes.
 
-Use **K** to capture a camera view, or **◇** beside a property to key only that track. Shift-click or drag a rectangle to select; drag keys to retime. **G / Graph Editor** opens value/speed graphs and independent incoming/outgoing velocity/influence. **F9** is Easy Ease, **Shift+F9** incoming and **Ctrl/Cmd+Shift+F9** outgoing. Expand the timeline or scroll its canvas to reach the graphs. Copy/paste and undo are owned by the canvas while focused.
+Drag layer bars to shift their keys together and their edges to trim object visibility. Eye/lock controls, property filtering and **U** (animated properties only) help navigate the tree. Key dragging, native temporal curves (**G**), incoming/outgoing velocity/influence, **F9** easing, copy/paste, undo and temporal reversal work inside the docked canvas. **K** captures camera/reveal; **◇** captures one property. Manual edits to already animated pins update keys at the playhead.
 
-Preview and PNG/MP4 export use the same compiled Rust sampler. Saved scenes retain native key metadata; existing scenes migrate on load. Keep a backup if reopening in an older release, which cannot reproduce native curves. Map camera/reveal bounds still clamp output. The preview work area does not trim export duration.
+Object-only animation leaves the camera free. Save/reopen preserves layer settings, native keys and frozen values. Preview and PNG/MP4 capture use the same compiled scene sampler, with save/export reading a direct timeline snapshot. This release does not include the complete EffectCraft compositor. Tauri packaging and an After Effects JSX exporter remain future work.
 
-This is the first migration stage: pin/polygon layers, spatial path editing in the timeline and the complete EffectCraft compositor are not included. Tauri packaging is planned separately. After Effects export is feasible through JSX plus rendered map media and projected editable overlays; no AE exporter ships yet.
-
-[Architecture, build and migration limits](docs/RUST_MIGRATION.md) · [After Effects export study](docs/AFTER_EFFECTS_EXPORT.md) · [Validation](docs/VALIDATION.md)
+[Layer workflow and current limits](docs/LAYER_TIMELINE.md) · [Rust architecture and build](docs/RUST_MIGRATION.md) · [After Effects export study](docs/AFTER_EFFECTS_EXPORT.md) · [Validation](docs/VALIDATION.md)
 
 ### Previous React timeline (v0.6.0, historical reference)
 

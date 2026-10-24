@@ -1,3 +1,5 @@
+> Current release: v0.8.0 adds object layers, layer timing and animated geographic styles. See [Layer timeline](LAYER_TIMELINE.md). The stage-1 scope and exclusions below describe v0.7.0 historically; build architecture remains applicable.
+
 # Rust timeline migration — v0.7.0, stage 1
 
 The active animation editor now uses an egui canvas compiled to WebAssembly. `App.js` mounts `RustTimeline`, which hosts `TimelineRunner`; the former React `CameraTimeline` is retained only as legacy reference/tests and is not mounted. MapLibre, geographic data/pins, route geometry editing, FFmpeg and the surrounding workspace remain JavaScript in this stage.

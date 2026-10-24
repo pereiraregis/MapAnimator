@@ -4,6 +4,8 @@ use effectcraft_time::Tick;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as Json, json};
 use std::collections::BTreeSet;
+mod objects;
+pub use objects::{CatalogLayer, Layer, LayerAnimation, PropertySpec};
 
 pub const CHANNELS: [&str; 6] = ["lng", "lat", "zoom", "pitch", "bearing", "pathProgress"];
 pub const NAMES: [&str; 6] = [
@@ -39,15 +41,22 @@ pub struct Key {
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Document {
-    pub tracks: [Vec<Key>; 6],
-    pub base: [f64; 6],
+    pub tracks: Vec<Vec<Key>>,
+    pub base: Vec<f64>,
+    pub properties: Vec<PropertySpec>,
+    pub layers: Vec<Layer>,
     pub next_id: u64,
 }
 impl Default for Document {
     fn default() -> Self {
         Self {
-            tracks: std::array::from_fn(|_| vec![]),
-            base: [0., 0., 5., 0., 0., 1.],
+            tracks: vec![vec![]; 6],
+            base: vec![0., 0., 5., 0., 0., 1.],
+            properties: objects::camera_properties(),
+            layers: vec![
+                Layer::new("camera", "Câmera", "camera"),
+                Layer::new("route", "Rota", "route"),
+            ],
             next_id: 1,
         }
     }
@@ -67,7 +76,7 @@ impl Document {
             .iter()
             .map(|k| k.data.clone())
             .collect();
-        if channel == 0 || channel == 4 {
+        if self.properties[channel].angular {
             for i in 1..keys.len() {
                 keys[i].value = Value::Scalar(
                     scalar(&keys[i - 1]) + wrap(scalar(&keys[i]) - scalar(&keys[i - 1])),
@@ -87,14 +96,24 @@ impl Document {
         }
     }
     pub fn sample(&self, time: f64) -> [f64; 6] {
-        std::array::from_fn(|c| {
+        let mut values = std::array::from_fn(|c| {
             let v = self.sample_track(c, time);
-            if c == 0 || c == 4 {
+            if self.properties[c].angular {
                 wrap(v)
             } else {
-                v.clamp(BOUNDS[c].0, BOUNDS[c].1)
+                let (lo, hi) = self.bounds(c);
+                v.clamp(lo, hi)
             }
-        })
+        });
+        if !self
+            .layers
+            .iter()
+            .find(|l| l.id == "route")
+            .is_none_or(|l| l.visible(time))
+        {
+            values[5] = 0.;
+        }
+        values
     }
     pub fn velocity(&self, channel: usize, time: f64) -> f64 {
         animation::velocity(
@@ -107,6 +126,7 @@ impl Document {
         .unwrap_or(0.)
     }
     pub fn validate(&self) -> Result<(), String> {
+        self.validate_layers()?;
         let mut ids = BTreeSet::new();
         if self
             .tracks
@@ -123,7 +143,7 @@ impl Document {
             .base
             .iter()
             .enumerate()
-            .any(|(c, v)| !v.is_finite() || *v < BOUNDS[c].0 || *v > BOUNDS[c].1)
+            .any(|(c, v)| !v.is_finite() || *v < self.bounds(c).0 || *v > self.bounds(c).1)
         {
             return Err("Câmera base inválida".into());
         }
@@ -137,8 +157,8 @@ impl Document {
                 let v = scalar(&k.data);
                 if !matches!(k.data.value, Value::Scalar(_))
                     || !v.is_finite()
-                    || v < BOUNDS[c].0
-                    || v > BOUNDS[c].1
+                    || v < self.bounds(c).0
+                    || v > self.bounds(c).1
                     || !(0. ..=600.).contains(&t)
                     || last.is_some_and(|prev| prev >= k.data.time)
                     || k.id.is_empty()
@@ -276,7 +296,7 @@ impl Document {
     }
     pub fn to_legacy(&self) -> Json {
         let mut times = BTreeSet::new();
-        for k in self.tracks.iter().flatten() {
+        for k in self.tracks.iter().take(6).flatten() {
             times.insert(k.data.time);
         }
         Json::Array(times.into_iter().map(|t| {
@@ -297,7 +317,7 @@ pub struct Editor {
     pub undo: Vec<Document>,
     pub redo: Vec<Document>,
     pub gesture: Option<Document>,
-    pub clipboard: Vec<(usize, Key)>,
+    pub clipboard: Vec<(String, Key)>,
     pub revision: u64,
 }
 impl Default for Editor {
@@ -336,7 +356,10 @@ impl Editor {
     pub fn command(&mut self, cmd: Json) -> Result<(), String> {
         let before = self.doc.clone();
         let selected = self.selected.clone();
-        let result = self.apply(&cmd).and_then(|_| self.doc.validate());
+        let result = self
+            .check_locks(&cmd)
+            .and_then(|_| self.apply(&cmd))
+            .and_then(|_| self.doc.validate());
         if let Err(err) = result {
             self.doc = before;
             self.selected = selected;
@@ -391,28 +414,37 @@ impl Editor {
                     .filter_map(|v| v.as_str().map(str::to_owned)),
             ),
             "capture" => {
-                let vals: [f64; 6] =
+                let vals: Vec<f64> =
                     serde_json::from_value(cmd["values"].clone()).map_err(|_| "Câmera inválida")?;
-                if self.doc.tracks.iter().all(Vec::is_empty) {
-                    self.doc.base = vals;
+                for (c, v) in vals.iter().enumerate().take(self.doc.base.len()) {
+                    if self.doc.tracks[c].is_empty() {
+                        self.doc.base[c] = *v;
+                    }
                 }
-                let channels: Vec<usize> =
-                    serde_json::from_value(cmd["channels"].clone()).unwrap_or((0..6).collect());
+                let channels = self.capture_channels(cmd)?;
                 self.selected.clear();
                 let time = Tick::from_seconds_f64(self.frame(self.time));
                 for c in channels {
-                    if c >= 6 {
+                    if c >= self.doc.tracks.len() {
                         return Err("Propriedade inválida".into());
                     }
+                    let value = if c < 6 {
+                        vals.get(c).copied()
+                    } else {
+                        cmd["propertyValues"][&self.doc.properties[c].uid]
+                            .as_f64()
+                            .or_else(|| vals.get(c).copied())
+                    }
+                    .ok_or("Valor de captura ausente")?;
                     let found = self.doc.tracks[c].iter().position(|k| k.data.time == time);
                     let id = if let Some(i) = found {
-                        self.doc.tracks[c][i].data.value = Value::Scalar(vals[c]);
+                        self.doc.tracks[c][i].data.value = Value::Scalar(value);
                         self.doc.tracks[c][i].id.clone()
                     } else {
                         let id = self.doc.new_id();
                         self.doc.tracks[c].push(Key {
                             id: id.clone(),
-                            data: Keyframe::new(time, Value::Scalar(vals[c])),
+                            data: Keyframe::new(time, Value::Scalar(value)),
                         });
                         id
                     };
@@ -479,7 +511,7 @@ impl Editor {
                 }
             }
             "delete" => {
-                self.doc.base = self.doc.sample(self.time);
+                self.doc.base = self.doc.sample_all(self.time);
                 for track in &mut self.doc.tracks {
                     track.retain(|k| !self.selected.contains(&k.id));
                 }
@@ -556,6 +588,7 @@ impl Editor {
                 }
             }
             "copy" => {
+                let properties = &self.doc.properties;
                 self.clipboard = self
                     .doc
                     .tracks
@@ -564,7 +597,7 @@ impl Editor {
                     .flat_map(|(c, t)| {
                         t.iter()
                             .filter(|k| self.selected.contains(&k.id))
-                            .map(move |k| (c, k.clone()))
+                            .map(move |k| (properties[c].uid.clone(), k.clone()))
                     })
                     .collect();
                 let start = self
@@ -580,7 +613,13 @@ impl Editor {
             "paste" => {
                 let clip = self.clipboard.clone();
                 self.selected.clear();
-                for (c, mut k) in clip {
+                for (uid, mut k) in clip {
+                    let c = self
+                        .doc
+                        .properties
+                        .iter()
+                        .position(|p| p.uid == uid)
+                        .ok_or("A propriedade copiada não existe nesta cena")?;
                     k.data.time =
                         Tick::from_seconds_f64(self.frame(self.time + k.data.time.seconds()));
                     if k.data.time.seconds() > self.duration {
@@ -591,6 +630,29 @@ impl Editor {
                     self.selected.insert(k.id.clone());
                     self.doc.tracks[c].push(k);
                     self.doc.tracks[c].sort_by_key(|k| k.data.time);
+                }
+            }
+            "layer" => self.edit_layer(cmd)?,
+            "object_values" => self.edit_object_values(cmd)?,
+            "reverse" => {
+                for track in &mut self.doc.tracks {
+                    let mut subset: Vec<_> = track
+                        .iter()
+                        .filter(|k| self.selected.contains(&k.id))
+                        .cloned()
+                        .collect();
+                    let mut keys: Vec<_> = subset.iter().map(|k| k.data.clone()).collect();
+                    animation::time_reverse(&mut keys);
+                    subset.reverse();
+                    for (k, data) in subset.iter_mut().zip(keys) {
+                        k.data = data;
+                    }
+                    for k in track.iter_mut() {
+                        if let Some(v) = subset.iter().find(|v| v.id == k.id) {
+                            *k = v.clone();
+                        }
+                    }
+                    track.sort_by_key(|k| k.data.time);
                 }
             }
             _ => return Err("Comando desconhecido".into()),

@@ -1,3 +1,13 @@
+## v0.8.0 — 23/10/2026 — timeline por camadas
+
+- **120 testes Rust**: 37 upstream keyframe, 20 upstream time, 22 core MapAnimator e nove interações egui. Comando: `cargo test --manifest-path rust/Cargo.toml --workspace --locked`.
+- **68 testes JavaScript em 11 suites**: catálogo/identidades, pins animados sem mutar os originais, feature-state/limpeza, restauração de estilos de rota, validação de metadados, expressões de paint contra o style spec MapLibre instalado e ponte React/WASM (incluindo snapshot direto antes do polling).
+- egui headless exercita seleção/arraste de keys e curvas, captura/bloqueio, trim de camada, deslocamento da barra em vários movimentos com um undo, preservação de histórico após atualização do catálogo e intervalos fora da duração. Isso não equivale a testar o DOM/WebGL.
+- WASM compilado executado em Node: duas sequências de 91 frames (câmera/rota e objetos sem keys de câmera), curvas nativas, antimeridiano, presença temporal e constantes persistidas de pin/rota. SHA256: `fa5d904308c42f523e05f0a45e7c0ffc6fe6024609674602acd8fe43cd410286`; 8,715,123 bytes, 2,394,809 gzip. Fontes: `3361a344c47c3697fa3c0bc2363140acfa4237dbcea61225b5eb769bd848a3ed`.
+- Build de produção: `main.1b2625fa.js` e `main.581e7bb2.css`; WASM público e build têm o mesmo SHA256. Permanecem avisos existentes de dependência dinâmica, bundle grande e Browserslist antigo. Os 15 arquivos vendorizados foram conferidos pelos Git blobs upstream durante o build.
+- CUA voltou a falhar ao enumerar o volume E: (`os error 1393`). Aparência no navegador, WebGL, clipboard real, toque, responsividade e exportação real PNG/MP4 não foram revalidados. Não há captura visual nova.
+- Tauri e exportador After Effects não estão implementados. Fluxo e limites atuais: [timeline por camadas](LAYER_TIMELINE.md).
+
 ## v0.7.0 — 23/10/2026 — migração Rust, etapa 1
 
 - **70 testes Rust passaram**: 37 do módulo upstream de keyframes, 20 de tempo, nove do estado/compatibilidade MapAnimator e quatro de interações egui. Execução final com Cargo.lock: `cargo test --manifest-path rust/Cargo.toml -p mapanimator-core -p mapanimator-web -p effectcraft-keyframe -p effectcraft-time --lib --locked`.

@@ -8,6 +8,13 @@ export class Sampler {
     sample(time: number): string;
 }
 
+export class SceneSampler {
+    free(): void;
+    [Symbol.dispose](): void;
+    constructor(points: string, catalog: string, animation: string);
+    sample(time: number): string;
+}
+
 export class TimelineRunner {
     free(): void;
     [Symbol.dispose](): void;
@@ -15,7 +22,9 @@ export class TimelineRunner {
     configure(duration: number, fps: number, enabled: boolean, disabled: boolean): void;
     destroy(): void;
     constructor();
+    set_objects(catalog: string, animation: string): void;
     set_scene(points: string, duration: number, fps: number, enabled: boolean, disabled: boolean): void;
+    snapshot(): string;
     start(canvas: HTMLCanvasElement): Promise<void>;
     take_events(): string;
 }
@@ -27,22 +36,27 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_sampler_free: (a: number, b: number) => void;
+    readonly __wbg_scenesampler_free: (a: number, b: number) => void;
     readonly __wbg_timelinerunner_free: (a: number, b: number) => void;
     readonly sample_points: (a: number, b: number, c: number) => [number, number, number, number];
     readonly sampler_new: (a: number, b: number) => [number, number, number];
     readonly sampler_sample: (a: number, b: number) => [number, number];
+    readonly scenesampler_new: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly scenesampler_sample: (a: number, b: number) => [number, number];
     readonly timelinerunner_command: (a: number, b: number, c: number) => [number, number];
     readonly timelinerunner_configure: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly timelinerunner_destroy: (a: number) => void;
     readonly timelinerunner_new: () => number;
+    readonly timelinerunner_set_objects: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly timelinerunner_set_scene: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+    readonly timelinerunner_snapshot: (a: number) => [number, number];
     readonly timelinerunner_start: (a: number, b: any) => any;
     readonly timelinerunner_take_events: (a: number) => [number, number];
     readonly wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___js_sys_389aeb828bf8c55b___Function_fn_wasm_bindgen_e8c9e71d28195151___JsValue_____wasm_bindgen_e8c9e71d28195151___sys__Undefined___js_sys_389aeb828bf8c55b___Function_fn_wasm_bindgen_e8c9e71d28195151___JsValue_____wasm_bindgen_e8c9e71d28195151___sys__Undefined_______true_: (a: number, b: number, c: any, d: any) => void;
     readonly wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___wasm_bindgen_e8c9e71d28195151___JsValue__core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_e8c9e71d28195151___JsError___true_: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_e8c9e71d28195151___JsValue___true_: (a: number, b: number) => [number, number];
     readonly wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___js_sys_389aeb828bf8c55b___Array______true_: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___js_sys_389aeb828bf8c55b___Array______true__13: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___js_sys_389aeb828bf8c55b___Array______true__17: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __externref_table_alloc: () => number;
