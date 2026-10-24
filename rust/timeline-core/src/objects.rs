@@ -390,7 +390,10 @@ impl Editor {
     }
     pub fn check_locks(&self, cmd: &Json) -> Result<(), String> {
         let op = cmd["op"].as_str().unwrap_or("");
-        if ["move", "delete", "value", "ease", "velocity", "reverse"].contains(&op)
+        if [
+            "move", "delete", "value", "ease", "velocity", "reverse", "retime", "sequence",
+        ]
+        .contains(&op)
             && self.doc.tracks.iter().enumerate().any(|(c, t)| {
                 self.doc.layer_of(c).locked && t.iter().any(|k| self.selected.contains(&k.id))
             })

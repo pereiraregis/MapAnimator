@@ -1,3 +1,5 @@
+> v0.9.0 adds a fixed toolbar, motion presets and timing commands. See [current workflow](MOTION_WORKFLOW.md). This page documents the layer model introduced in v0.8.0.
+
 # Timeline por camadas — v0.8.0
 
 A timeline Rust/egui agora organiza câmera, rota, pins e elementos geográficos em camadas com propriedades independentes. O mapa continua em MapLibre/React; a avaliação da animação e os comandos ficam em Rust/WASM.

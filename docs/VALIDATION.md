@@ -1,3 +1,14 @@
+## v0.9.0 — 24/10/2026 — presets e fluxo de edição
+
+- **131 testes Rust passaram**: 28 do core MapAnimator, 14 da UI/integração egui e 89 upstream (cor, geometria, keyframe, tempo e integração). Executado `cargo test --manifest-path rust/Cargo.toml --workspace --locked`; core/UI repetidos após o último ajuste de seleção em grupo.
+- **68 testes JavaScript passaram em 11 suites**. As dependências de terceiros e os arquivos vendorizados não foram modificados.
+- Novos testes de domínio verificam presets editáveis/persistidos, um undo, preservação de keys fora do efeito, bloqueios e intervalos curtos, retiming de velocidades, colisões atômicas, sequenciamento com offsets e revelação da rota.
+- Novos testes egui headless acionam os menus reais Presets/Tempo com eventos de ponteiro, criam keys e aplicam duração. Outros arrastam uma alça da área de prévia, verificam zoom ancorado com Event::Zoom e ausência de zoom na rolagem vertical normal, e limites do enquadramento/régua. Os testes históricos de arraste, curvas, bloqueio e camadas continuam passando.
+- Smoke do **WASM compilado** passou com duas sequências de 91 amostras, câmera/rota, objetos, curvas e constantes persistidas. SHA256 final: `4dfbbf8e763e3a4e9bff8dc5f9ed38fa89093c2971e893fc330d596c6c56d08c`; 8,858,356 bytes (2,418,761 gzip). SHA256 das fontes: `e81d69d7607bf2d9c4d63a308d912c15ee58a66e01098e31eebd7e01a2e1a2d5`.
+- Build React de produção concluído: `main.60d6e404.js` (600,86 kB gzip), `main.581e7bb2.css` (15,63 kB gzip). Depois do ajuste final apenas em Rust, o módulo WASM/bindings/build-info e seus notices foram recompilados e sincronizados para o build. Hashes público/build conferem. Permanecem avisos existentes de dependência dinâmica, tamanho do bundle e Browserslist antigo.
+- Duas tentativas de iniciar o navegador CUA falharam; diagnóstico: inicializador MXC no volume E:, `os error 1393`, estrutura do disco corrompida/ilegível. Layout real, responsividade, WebGL, clipboard, toque e exportação real PNG/MP4 continuam sem revisão visual nesta entrega. Testes headless não substituem essa verificação.
+- Guia de uso e limites: [fluxo de animação](MOTION_WORKFLOW.md). Tauri, compositor completo e exportador After Effects continuam pendentes.
+
 ## v0.8.0 — 23/10/2026 — timeline por camadas
 
 - **120 testes Rust**: 37 upstream keyframe, 20 upstream time, 22 core MapAnimator e nove interações egui. Comando: `cargo test --manifest-path rust/Cargo.toml --workspace --locked`.

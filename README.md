@@ -1,6 +1,14 @@
 # Map Animator V2
 
-**Current release: v0.8.0 — layered Rust timeline.** [Open the editor](https://pereiraregis.github.io/MapAnimator/) · [Changelog](CHANGELOG.md)
+**Current release: v0.9.0 — motion presets and timeline workflow.** [Open the editor](https://pereiraregis.github.io/MapAnimator/) · [Changelog](CHANGELOG.md)
+
+### Motion workflow (v0.9.0)
+
+Timeline commands now live in compact menus, with transport fixed while tracks and the inspector scroll independently. Resize the property column, read live values, press **F** to fit selected keys and use **Ctrl/Cmd + wheel** to zoom under the cursor. **B / N** and the ruler handles set the preview area.
+
+Select a layer and open **Presets** for editable fade-in/out, pin pop/pulse and route drawing. **Tempo** changes the selected animation duration, aligns keys at the playhead or staggers selected layers. Shift-click layer/property names to build a selection. Presets and timing commands support undo and reject locked layers, collisions and invalid intervals atomically.
+
+[Workflow and preset guide](docs/MOTION_WORKFLOW.md)
 
 ### Rust / egui timeline (v0.8.0)
 

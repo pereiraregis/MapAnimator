@@ -4,6 +4,7 @@ use effectcraft_time::Tick;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as Json, json};
 use std::collections::BTreeSet;
+mod motion;
 mod objects;
 pub use objects::{CatalogLayer, Layer, LayerAnimation, PropertySpec};
 
@@ -632,6 +633,9 @@ impl Editor {
                     self.doc.tracks[c].sort_by_key(|k| k.data.time);
                 }
             }
+            "preset" => self.motion_preset(cmd)?,
+            "retime" => self.retime_selection(cmd)?,
+            "sequence" => self.sequence_selection(cmd)?,
             "layer" => self.edit_layer(cmd)?,
             "object_values" => self.edit_object_values(cmd)?,
             "reverse" => {

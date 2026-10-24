@@ -1,3 +1,5 @@
+> v0.9.0 adds [motion presets and workflow tools](MOTION_WORKFLOW.md); the v0.7.0 stage-1 description below is historical.
+
 > Current release: v0.8.0 adds object layers, layer timing and animated geographic styles. See [Layer timeline](LAYER_TIMELINE.md). The stage-1 scope and exclusions below describe v0.7.0 historically; build architecture remains applicable.
 
 # Rust timeline migration — v0.7.0, stage 1
