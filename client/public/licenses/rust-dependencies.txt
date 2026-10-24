@@ -1,4 +1,4 @@
-Rust dependency notices — MapAnimator v0.7.0
+Rust dependency notices — MapAnimator v0.8.0
 Includes resolved Cargo.lock dependencies; some platform-specific crates are not in the web binary.
 
 

@@ -19,3 +19,12 @@ export function sampleRust(points, time) {
   return Object.fromEntries(names.map((name, i) => [name, values[i]]));
 }
 export function cameraValues(camera) { return camera && names.map(name => camera[name]); }
+
+let sceneSampler, sceneInputs;
+export function sampleSceneRust(points, catalog, animation, time) {
+  if(!wasm) throw Error('Aguarde o motor Rust carregar.');
+  if(!sceneInputs || sceneInputs[0]!==points || sceneInputs[1]!==catalog || sceneInputs[2]!==animation) {
+    sceneSampler?.free();sceneSampler=new wasm.SceneSampler(JSON.stringify(points),JSON.stringify(catalog),JSON.stringify(animation));sceneInputs=[points,catalog,animation];
+  }
+  return JSON.parse(sceneSampler.sample(time));
+}

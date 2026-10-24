@@ -12,6 +12,7 @@ export const SHORTCUTS = [
   ['Ctrl/⌘ + A / C / V / D', 'Na timeline: selecionar tudo / copiar / colar / duplicar'],
   ['Ctrl/⌘ + Z / Shift + Z', 'Na timeline: desfazer / refazer (mantenha Ctrl/⌘)'],
   ['Delete / Backspace', 'Na timeline: excluir keyframes selecionados'],
+  ['U', 'Na timeline: mostrar apenas propriedades animadas'],
   ['F9 / Shift + F9', 'Na timeline: Easy Ease / Ease In'],
   ['Ctrl/⌘ + Shift + F9', 'Na timeline: Ease Out'],
 ];

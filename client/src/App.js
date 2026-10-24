@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import MaplibreGeocoder from '@maplibre/maplibre-gl-geocoder';
@@ -10,7 +10,7 @@ import studio from '@theatre/studio';
 import JSZip from 'jszip';
 import FeatureBrowser from './FeatureBrowser';
 import RustTimeline from './RustTimeline';
-import { loadRustTimeline } from './rust/runtime';
+import { loadRustTimeline, sampleSceneRust } from './rust/runtime';
 import RouteEditor from './RouteEditor';
 import useRouteEditor from './useRouteEditor';
 import { animateRouteViews } from './geo/route';
@@ -18,10 +18,11 @@ import ShortcutHelp from './ShortcutHelp';
 import { shortcutAction } from './shortcuts';
 import { viewsToTheatre } from './geo/theatre';
 import { createPinImage, PIN_PRESETS } from './geo/pins';
-import { sampleCamera } from './geo/animation';
+import { sampleCamera, wrap } from './geo/animation';
 import { BASEMAP_DEFAULTS, isBasemapLayer, applyBasemap } from './geo/basemap';
 import { featureBounds } from './geo/features';
 import { syncFeatureLayers } from './geo/layers';
+import { buildLayerCatalog, pinCollection, applyFeatureAnimation, applyRouteAnimation, EMPTY_LAYER_ANIMATION, hasLayerAnimation } from './geo/layerAnimation';
 import { geocode } from './geo/geocoding';
 import { STORAGE_KEY, REOPEN_KEY, readReopenedScene, validateScene, downloadJSON } from './geo/scene';
 import './workspace.css';
@@ -100,6 +101,9 @@ function App() {
   const [projectName, setProjectName] = useState(reopenedScene?.name || 'Main Scene');
   const [cameraView, setCameraView] = useState(reopenedScene?.camera || { lng: -46.633, lat: -23.550, zoom: 12, pitch: 0, bearing: 0 });
   const [waypoints, setWaypoints] = useState(() => (reopenedScene?.waypoints || []).map(p => ({ ...p, id: p.id || crypto.randomUUID() })));
+  const [layerAnimation, setLayerAnimation] = useState(reopenedScene?.layerAnimation || EMPTY_LAYER_ANIMATION);
+  const layerAnimationRef = useRef(layerAnimation), layerOverrides = useRef([]), renderSettingsRef = useRef(null);
+  layerAnimationRef.current=layerAnimation;
   const [nativeStudio, setNativeStudio] = useState(openNativeStudio);
   const [nativeTime, setNativeTime] = useState(0), [nativePlaying, setNativePlaying] = useState(false);
   useEffect(() => onChange(sheet.sequence.pointer.position, setNativeTime), []);
@@ -109,7 +113,7 @@ function App() {
   const [appearance, setAppearance] = useState(reopenedScene?.appearance || { ...BASEMAP_DEFAULTS });
   const [styleURL, setStyleURL] = useState('');
   const basemapOriginals = useRef([]), appearanceRef = useRef(appearance), animationModeRef = useRef(false);
-  appearanceRef.current = appearance; animationModeRef.current = waypointMode && waypoints.length > 0;
+  appearanceRef.current = appearance; animationModeRef.current = waypointMode && (waypoints.length > 0 || hasLayerAnimation(layerAnimation));
   const projectInput = useRef(null), featuresRef = useRef(features);
   const setupLayersRef = useRef(null);
   const routeEditorRef = useRef(null);
@@ -134,6 +138,8 @@ function App() {
   const routeEditor = useRouteEditor({ map, initial: reopenedScene?.route || [], initialProgress: reopenedScene?.cameraMode === 'waypoints' ? (sampleCamera(reopenedScene.waypoints || [], 0)?.pathProgress ?? 1) : 1, color: settings.pathColor, width: settings.pathWidth, disabled: isRendering, onPause: () => timelineRef.current?.pause() });
   routeEditorRef.current = routeEditor;
   const customPathCoords = routeEditor.coordsRef, pinsRef = useRef(reopenedScene?.pins || []);
+  const layerCatalog = useMemo(() => buildLayerCatalog(pins, features, routeEditor.coords, {pathColor:settings.pathColor,pathWidth:settings.pathWidth}), [pins, features, routeEditor.coords, settings.pathColor, settings.pathWidth]);
+  renderSettingsRef.current=settings;
   const isDrawingRef = useRef(false);
   useEffect(() => { isDrawingRef.current = isDrawing; }, [isDrawing]);
 
@@ -159,24 +165,8 @@ function App() {
 
   const syncPinsLayer = useCallback(() => {
     if (map.current?.getSource('pins-source')) {
-      const features = pinsRef.current.filter(p => p.visible !== false).map(p => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
-        properties: {
-          id: p.id,
-          imageId: `pin-${p.id}`,
-          iconOffset: p.iconOffset || [0, 3],
-          opacity: p.opacity ?? 1,
-          text: p.text || '',
-          textScale: p.textScale || 1,
-          textOffsetX: p.textOffsetX || 0,
-          textOffsetY: p.textOffsetY || 0,
-          textColor: p.textColor || '#ffffff',
-          fontFamily: p.fontFamily || 'Inter, sans-serif'
-        }
-      }));
-      console.log('Syncing pins layer with features:', features.length);
-      map.current.getSource('pins-source').setData({ type: 'FeatureCollection', features });
+      const data=pinCollection(pinsRef.current,layerOverrides.current,dragState.current.active ? dragState.current.id : null);
+      map.current.getSource('pins-source').setData(data);
     } else {
       console.warn('pins-source not found!');
     }
@@ -195,6 +185,8 @@ function App() {
         source: 'pins-source',
         layout: {
           'icon-image': ['get', 'imageId'],
+          'icon-size': ['get', 'iconSize'],
+          'icon-rotate': ['get', 'rotation'],
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
           'icon-anchor': 'bottom',
@@ -234,7 +226,8 @@ function App() {
     if (map.current) map.current.setStyle(settings.mapStyle, { diff: false });
   }, [settings.mapStyle]);
 
-  useEffect(() => { syncFeatureLayers(map.current, features); }, [features]);
+  useEffect(() => { syncFeatureLayers(map.current, features); applyFeatureAnimation(map.current, features, layerOverrides.current); }, [features]);
+  useEffect(() => { applyRouteAnimation(map.current,layerOverrides.current,settings); },[settings,isRendering,routeEditor.editing,routeEditor.coords,routeEditor.selected]);
   useEffect(() => { applyBasemap(map.current, basemapOriginals.current, appearance); }, [appearance]);
 
   useEffect(() => {
@@ -254,6 +247,8 @@ function App() {
       applyBasemap(map.current, basemapOriginals.current, appearanceRef.current);
       setupLayersRef.current();
       syncFeatureLayers(map.current, featuresRef.current, true);
+      applyFeatureAnimation(map.current,featuresRef.current,layerOverrides.current);
+      applyRouteAnimation(map.current,layerOverrides.current,renderSettingsRef.current);
       pinsRef.current.forEach(pin => createPinMarker(pin));
     });
     map.current.on('error', e => setStatus(`Mapa: ${e.error?.message || 'Falha ao carregar dados.'}`));
@@ -294,6 +289,8 @@ function App() {
       e.preventDefault();
       const feature = e.features[0];
       if (feature) {
+        if (layerAnimationRef.current.layers.some(l=>l.id===`pin:${feature.properties.id}` && l.locked)) { setStatus('Camada do pin bloqueada na timeline.'); return; }
+        timelineRef.current?.pause();
         setActivePinId(feature.properties.id); setRightTab('pin'); setBrowserVisible(true);
         dragState.current = { id: feature.properties.id, active: true, panEnabled: map.current.dragPan.isEnabled() };
         map.current.dragPan.disable();
@@ -307,8 +304,8 @@ function App() {
         const pList = pinsRef.current;
         const idx = pList.findIndex(p => p.id === id);
         if (idx !== -1) {
-          pList[idx].lng = e.lngLat.lng;
-          pList[idx].lat = e.lngLat.lat;
+          pList[idx].lng = wrap(e.lngLat.lng);
+          pList[idx].lat = Math.max(-85,Math.min(85,e.lngLat.lat));
           syncPinsLayer();
         }
       }
@@ -319,6 +316,8 @@ function App() {
         dragState.current.active = false;
         if (dragState.current.panEnabled) map.current.dragPan.enable();
         map.current.getCanvasContainer().style.cursor = '';
+        const p=pinsRef.current.find(p=>p.id===dragState.current.id);
+        if(p) keyAnimatedPin(p.id,{lng:p.lng,lat:p.lat});
         setPins([...pinsRef.current]);
       }
     };
@@ -371,7 +370,14 @@ function App() {
     }
   }, [syncPinsLayer]);
 
+  const keyAnimatedPin = (id, values) => {
+    const keyed=new Set([...layerAnimationRef.current.tracks.map(t=>t.property),...Object.keys(layerAnimationRef.current.constants || {})]);
+    const edits=Object.fromEntries(Object.entries(values).map(([key,value])=>[`pin:${id}/${key}`,value]).filter(([key])=>keyed.has(key)));
+    if(Object.keys(edits).length) timelineRef.current?.editObjectValues(edits);
+  };
   const updatePin = async (id, field, value) => {
+    if(layerAnimationRef.current.layers.some(l=>l.id===`pin:${id}` && l.locked)) {setStatus('Camada do pin bloqueada na timeline.');return;}
+    timelineRef.current?.pause();
     const isFloat = ['scale', 'textScale', 'fontSize', 'strokeWidth', 'opacity'].includes(field);
     const isInt = ['textOffsetX', 'textOffsetY'].includes(field);
     let val = value;
@@ -389,6 +395,7 @@ function App() {
     if (idx !== -1) {
       const p = { ...pinsRef.current[idx], [field]: val };
       pinsRef.current = pinsRef.current.map(x => x.id === id ? p : x); createPinMarker(p);
+      keyAnimatedPin(id,{[field]:val});
       setPins(prev => prev.map(x => x.id === id ? p : x));
     }
   };
@@ -421,7 +428,8 @@ function App() {
   const getResolution = () => settings.resolution.split('x').map(Number);
 
   const collectFrames = async (fps) => {
-    if (waypointMode && waypoints.length) await loadRustTimeline();
+    timelineRef.current?.pause();
+    if (waypointMode) await loadRustTimeline();
     // If the user specifies an export duration, use it! Otherwise fallback.
     const duration = settings.exportDuration > 0 ? settings.exportDuration : (sheet.sequence.length > 0 ? sheet.sequence.length : 10);
     const start = 0;
@@ -431,9 +439,10 @@ function App() {
     }
     const total = Math.ceil(duration * fps);
     const frames = [];
+    const timelineSnapshot = timelineRef.current?.snapshot();
     routeEditor.hideHandles(true);
     for (let i = 0; i < total; i++) {
-      if (waypointMode && waypoints.length) seekCamera(start + i / fps);
+      if (waypointMode) seekCamera(start + i / fps,undefined,undefined,undefined,undefined,timelineSnapshot);
       else sheet.sequence.position = start + (i / fps);
       await new Promise(r => setTimeout(r, 60));
       await new Promise((resolve, reject) => {
@@ -509,10 +518,11 @@ function App() {
   };
 
   const sceneSnapshot = () => {
+    const timeline=timelineRef.current?.snapshot();
     const c = map.current.getCenter();
     return validateScene({ format: 'MapAnimator', version: 1, name: projectName,
         settings, pins: pinsRef.current.map(({ marker, ...pin }) => pin), features,
-        waypoints, cameraMode: waypointMode ? 'waypoints' : 'theatre', appearance,
+        waypoints:timeline?.points || waypoints, layerAnimation:timeline?.animation || layerAnimation, cameraMode: waypointMode ? 'waypoints' : 'theatre', appearance,
         route: customPathCoords.current, camera: { lng: c.wrap().lng, lat: c.lat, zoom: map.current.getZoom(), pitch: map.current.getPitch(), bearing: map.current.getBearing() },
         theatre: studio.createContentOfSaveFile(project.address.projectId),
       });
@@ -602,11 +612,15 @@ function App() {
     animateRoute();
     setStatus('Rota importada e revelação pronta. Use Espaço para reproduzir ou Editar pontos para ajustar. A linha original foi ocultada.');
   };
-  const seekCamera = (time, rustValues) => {
-    const v = rustValues ? Object.fromEntries(['lng', 'lat', 'zoom', 'pitch', 'bearing', 'pathProgress'].map((name, i) => [name, rustValues[i]])) : sampleCamera(waypoints, time); if (!v || !map.current) return;
-    map.current.jumpTo({ center: [v.lng, v.lat], zoom: v.zoom, pitch: v.pitch, bearing: v.bearing });
-    routeEditorRef.current.setProgress(v.pathProgress);
+  const seekCamera = (time, rustValues, layerValues, cameraAnimated, routeAnimated, timelineSnapshot) => {
+    if(!map.current) return;
+    const sample = rustValues ? { values:rustValues, layers:layerValues || [], cameraAnimated, routeAnimated } : sampleSceneRust(timelineSnapshot?.points || waypoints,layerCatalog,timelineSnapshot?.animation || layerAnimation,time);
+    const v=Object.fromEntries(['lng','lat','zoom','pitch','bearing','pathProgress'].map((name,i)=>[name,sample.values[i]]));
+    if(sample.cameraAnimated !== false) map.current.jumpTo({center:[v.lng,v.lat],zoom:v.zoom,pitch:v.pitch,bearing:v.bearing});
+    if(sample.routeAnimated !== false) routeEditorRef.current.setProgress(v.pathProgress);
+    layerOverrides.current=sample.layers;syncPinsLayer();applyFeatureAnimation(map.current,featuresRef.current,sample.layers);applyRouteAnimation(map.current,sample.layers,settings);
   };
+  useEffect(() => { if(!waypointMode){layerOverrides.current=[];syncPinsLayer();applyFeatureAnimation(map.current,featuresRef.current,[]);applyRouteAnimation(map.current,[],settings);} },[waypointMode,settings,syncPinsLayer]);
 
   const activatePane = pane => {
     setMobilePane(pane);
@@ -653,7 +667,7 @@ function App() {
   return (
     <div className={`app-container ${timelineVisible ? 'with-timeline' : ''}`} style={{ '--left-width': panelVisible ? 'var(--panel-left-size)' : '0px', '--right-width': browserVisible ? 'var(--panel-right-size)' : '0px', '--timeline-height': timelineVisible ? `min(75vh, ${timelineHeight}px)` : '0px' }}>
       <header className="workspace-bar">
-        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.7.0</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
+        <div className="workspace-brand"><strong>MAP ANIMATOR <span className="version-badge">0.8.0</span></strong><small>GEOGRAPHIC MOTION STUDIO</small></div>
         <input aria-label="Nome do projeto" value={projectName} onChange={e => setProjectName(e.target.value)} />
         <nav className="workspace-navigation" aria-label="Áreas do editor">
           <button title="Controles (1)" aria-pressed={compact ? mobilePane === 'controls' : panelVisible} onClick={() => activatePane('controls')}>Controles</button>
@@ -668,7 +682,7 @@ function App() {
         <input ref={projectInput} hidden type="file" accept=".json" onChange={openSceneFile} />
       </header>
       {nativeStudio && <div className="native-studio-bar"><strong>THEATRE.JS · EDITOR NATIVO</strong><span>Map → propriedades sequenciadas · Clique no segmento para Tween ou no ícone da track para curvas. Salvar preserva as edições.</span><button onClick={saveScene}>Salvar</button><button onClick={closeTheatre}>Fechar Studio</button></div>}
-      <RustTimeline ref={timelineRef} visible={timelineVisible} fps={settings.fps} points={waypoints} setPoints={setWaypoints} duration={settings.exportDuration}
+      <RustTimeline catalog={layerCatalog} layerAnimation={layerAnimation} onLayerAnimation={setLayerAnimation} ref={timelineRef} visible={timelineVisible} fps={settings.fps} points={waypoints} setPoints={setWaypoints} duration={settings.exportDuration}
         onDuration={exportDuration => setSettings(s => ({ ...s, exportDuration }))} onSeek={seekCamera} onCapture={captureCamera}
         onResize={setTimelineHeight} onTheatre={showTheatre} nativeSeek={nativeSeek} nativePlay={nativePlay} nativePause={nativePause} nativeTime={nativeTime} nativePlaying={nativePlaying} enabled={waypointMode} onEnabled={value => { nativePause(); setWaypointMode(value); }} disabled={isRendering} onStatus={setStatus} />
       <footer className="workspace-status"><span role="status">{status}</span><div ref={creditsContainer} className="map-credits" aria-label="Créditos do mapa" /><span className="status-hint">Espaço · Play/Pause <span>◇ K · Capturar</span> <span>? · Atalhos</span></span></footer>
@@ -841,7 +855,7 @@ function App() {
           <div className="prop-row"><label>Traço</label>
             <input type="number" min="1" max="20" value={settings.pathWidth} onChange={e => setSettings(s => ({ ...s, pathWidth: e.target.value }))} />
           </div>
-          <RouteEditor route={routeEditor} drawing={isDrawing} onDrawing={setDrawingMode} onAnimate={animateRoute} onProgress={value => { timelineRef.current?.pause(); routeEditor.setProgress(value); }} onFrame={frameRoute} disabled={isRendering} />
+          <RouteEditor route={routeEditor} drawing={isDrawing} onDrawing={setDrawingMode} onAnimate={animateRoute} onProgress={value => { timelineRef.current?.pause(); routeEditor.setProgress(value); if(layerAnimation.constants?.['route/pathProgress'] !== undefined) timelineRef.current?.editObjectValues({'route/pathProgress':value}); }} onFrame={frameRoute} disabled={isRendering} />
         </Section>
 
         <Section title="Pins" id="pins" collapsed={sec.pins} onToggle={toggleSec}>

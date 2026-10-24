@@ -44,6 +44,56 @@ export class Sampler {
 }
 if (Symbol.dispose) Sampler.prototype[Symbol.dispose] = Sampler.prototype.free;
 
+export class SceneSampler {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SceneSamplerFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_scenesampler_free(ptr, 0);
+    }
+    /**
+     * @param {string} points
+     * @param {string} catalog
+     * @param {string} animation
+     */
+    constructor(points, catalog, animation) {
+        const ptr0 = passStringToWasm0(points, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(catalog, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(animation, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.scenesampler_new(ptr0, len0, ptr1, len1, ptr2, len2);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0];
+        SceneSamplerFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} time
+     * @returns {string}
+     */
+    sample(time) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.scenesampler_sample(this.__wbg_ptr, time);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+}
+if (Symbol.dispose) SceneSampler.prototype[Symbol.dispose] = SceneSampler.prototype.free;
+
 export class TimelineRunner {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
@@ -85,6 +135,20 @@ export class TimelineRunner {
         return this;
     }
     /**
+     * @param {string} catalog
+     * @param {string} animation
+     */
+    set_objects(catalog, animation) {
+        const ptr0 = passStringToWasm0(catalog, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(animation, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.timelinerunner_set_objects(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
      * @param {string} points
      * @param {number} duration
      * @param {number} fps
@@ -97,6 +161,21 @@ export class TimelineRunner {
         const ret = wasm.timelinerunner_set_scene(this.__wbg_ptr, ptr0, len0, duration, fps, enabled, disabled);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @returns {string}
+     */
+    snapshot() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.timelinerunner_snapshot(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
         }
     }
     /**
@@ -1369,22 +1448,22 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 551, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 594, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___wasm_bindgen_e8c9e71d28195151___JsValue__core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_e8c9e71d28195151___JsError___true_);
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("Array<any>")], shim_idx: 260, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("Array<any>")], shim_idx: 306, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___js_sys_389aeb828bf8c55b___Array______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000003: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("Event")], shim_idx: 260, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___js_sys_389aeb828bf8c55b___Array______true__13);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("Event")], shim_idx: 306, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___js_sys_389aeb828bf8c55b___Array______true__17);
             return ret;
         },
         __wbindgen_generic_0000000000000004: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 259, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 305, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_e8c9e71d28195151___JsValue___true_);
             return ret;
         },
@@ -1455,8 +1534,8 @@ function wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___js_sys_3
     wasm.wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___js_sys_389aeb828bf8c55b___Array______true_(arg0, arg1, arg2);
 }
 
-function wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___js_sys_389aeb828bf8c55b___Array______true__13(arg0, arg1, arg2) {
-    wasm.wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___js_sys_389aeb828bf8c55b___Array______true__13(arg0, arg1, arg2);
+function wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___js_sys_389aeb828bf8c55b___Array______true__17(arg0, arg1, arg2) {
+    wasm.wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___js_sys_389aeb828bf8c55b___Array______true__17(arg0, arg1, arg2);
 }
 
 function wasm_bindgen_e8c9e71d28195151___convert__closures_____invoke___wasm_bindgen_e8c9e71d28195151___JsValue__core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_e8c9e71d28195151___JsError___true_(arg0, arg1, arg2) {
@@ -1475,6 +1554,9 @@ const __wbindgen_enum_ResizeObserverBoxOptions = ["border-box", "content-box", "
 const SamplerFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_sampler_free(ptr, 1));
+const SceneSamplerFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_scenesampler_free(ptr, 1));
 const TimelineRunnerFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_timelinerunner_free(ptr, 1));
