@@ -86,7 +86,7 @@ impl TimelineUi {
         r.clone().on_hover_text(&layer.name);
         if r.clicked() {
             self.active_layer = Some(layer.id.clone());
-            s.editor.selected = s
+            let ids: std::collections::BTreeSet<String> = s
                 .editor
                 .doc
                 .tracks
@@ -95,6 +95,15 @@ impl TimelineUi {
                 .filter(|(c, _)| s.editor.doc.properties[*c].layer == layer.id)
                 .flat_map(|(_, t)| t.iter().map(|k| k.id.clone()))
                 .collect();
+            if ui.input(|i| i.modifiers.shift) {
+                if !ids.is_empty() && ids.iter().all(|id| s.editor.selected.contains(id)) {
+                    s.editor.selected.retain(|id| !ids.contains(id));
+                } else {
+                    s.editor.selected.extend(ids);
+                }
+            } else {
+                s.editor.selected = ids;
+            }
         }
         used |= r.hovered();
         let x = |t: f64| lane.left() + ((t - self.start) * pps) as f32;

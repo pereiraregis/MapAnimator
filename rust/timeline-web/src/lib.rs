@@ -1,5 +1,6 @@
 mod layer_ui;
 mod upstream_ui;
+mod workflow_ui;
 use effectcraft_keyframe::{Ease, Interp};
 use eframe::egui::*;
 use mapanimator_core::{CatalogLayer, Document, Editor, LayerAnimation, scalar};
@@ -284,6 +285,10 @@ impl TimelineRunner {
             s.editor.selected.clear();
             s.playing = false;
         }
+        if s.editor.duration != duration {
+            s.range = None;
+        }
+        s.editor.time = s.editor.time.min(duration);
         s.editor.duration = duration;
         s.editor.fps = fps;
         s.enabled = enabled;
@@ -352,6 +357,11 @@ struct TimelineUi {
     active_layer: Option<String>,
     bar_drag: Option<(String, u8, f32, f64, f64)>,
     animated_only: bool,
+    label_width: f32,
+    preset_duration: f64,
+    retime_start: f64,
+    retime_duration: f64,
+    sequence_gap: f64,
 }
 impl TimelineUi {
     fn new(shared: Rc<RefCell<Shared>>) -> Self {
@@ -372,6 +382,11 @@ impl TimelineUi {
             active_layer: None,
             bar_drag: None,
             animated_only: false,
+            label_width: 260.,
+            preset_duration: 1.,
+            retime_start: 0.,
+            retime_duration: 2.,
+            sequence_gap: 0.2,
         }
     }
     fn action(s: &mut Shared, op: &str) {
@@ -409,6 +424,9 @@ impl TimelineUi {
                     let m = modifiers.command || modifiers.ctrl;
                     match key{
                 Key::Space if !m && !modifiers.alt=>Self::action(s,"play"),Key::K if !m && !modifiers.alt=>Self::action(s,"capture_request"),Key::G if !m && !modifiers.alt=>s.curves=!s.curves,Key::U if !m && !modifiers.alt=>self.animated_only=!self.animated_only,
+                Key::F if !m && !modifiers.alt=>self.fit_selection(s),
+                Key::B if !m && !modifiers.alt=>{let mut r=s.range.unwrap_or([0.,s.editor.duration]);if s.editor.time<r[1]{r[0]=s.editor.time;s.range=Some(r);}},
+                Key::N if !m && !modifiers.alt=>{let mut r=s.range.unwrap_or([0.,s.editor.duration]);if s.editor.time>r[0]{r[1]=s.editor.time;s.range=Some(r);}},
                 Key::Delete|Key::Backspace=>Self::action(s,"delete"),
                 Key::A if m=>s.editor.selected=s.editor.doc.tracks.iter().flatten().map(|k|k.id.clone()).collect(),
                 Key::Z if m=>Self::action(s,if modifiers.shift{"redo"}else{"undo"}),
@@ -489,60 +507,18 @@ impl TimelineUi {
                 self.start = 0.;
             }
         });
-        ui.horizontal_wrapped(|ui| {
-            ui.label(format!("{} keys selecionados", s.editor.selected.len()));
-            for (label, op) in [
-                ("Copiar", "copy"),
-                ("Colar", "paste"),
-                ("Excluir", "delete"),
-            ] {
-                if ui.small_button(label).clicked() {
-                    Self::action(s, op);
-                }
-            }
-            for (label, mode) in [
-                ("Linear", "linear"),
-                ("Hold", "hold"),
-                ("Easy Ease · F9", "easy"),
-                ("Auto Bézier", "auto"),
-            ] {
-                if ui.small_button(label).clicked() {
-                    s.cmd(json!({"op":"ease","mode":mode}));
-                }
-            }
-            ui.checkbox(&mut self.animated_only, "Animadas · U");
-            if ui.small_button("Inverter tempo").clicked() {
-                Self::action(s, "reverse");
-            }
-            ui.add(
-                TextEdit::singleline(&mut self.filter)
-                    .hint_text("Filtrar propriedades")
-                    .desired_width(125.),
-            );
-            let mut range = s.range.unwrap_or([0., s.editor.duration]);
-            ui.label("Prévia");
-            let a = ui.add(
-                DragValue::new(&mut range[0])
-                    .speed(1. / s.editor.fps)
-                    .range(0. ..=s.editor.duration),
-            );
-            let b = ui.add(
-                DragValue::new(&mut range[1])
-                    .speed(1. / s.editor.fps)
-                    .range(0. ..=s.editor.duration),
-            );
-            if a.changed() || b.changed() {
-                if range[1] > range[0] {
-                    s.range = Some(range);
-                    s.playing = false;
-                }
-            }
-            ui.checkbox(&mut s.looped, "Loop");
-        });
+        self.workflow_toolbar(ui, s);
     }
+
     fn tracks(&mut self, ui: &mut Ui, s: &mut Shared) {
+        self.start = self.start.clamp(
+            0.,
+            (s.editor.duration - s.editor.duration / self.zoom).max(0.),
+        );
         let row = 29.;
-        let label = 172.;
+        let label = self
+            .label_width
+            .min((ui.available_width() - 100.).max(110.));
         let mut groups: std::collections::BTreeMap<String, Vec<usize>> = Default::default();
         for (c, p) in s.editor.doc.properties.iter().enumerate() {
             groups.entry(p.layer.clone()).or_default().push(c);
@@ -583,20 +559,74 @@ impl TimelineUi {
             Sense::click_and_drag(),
         );
         let lane = Rect::from_min_max(pos2(rect.left() + label, rect.top()), rect.max);
+        let divider = Rect::from_min_max(
+            pos2(lane.left() - 3., rect.top()),
+            pos2(lane.left() + 3., rect.bottom()),
+        );
+        let split = ui.interact(divider, ui.id().with("property_divider"), Sense::drag());
+        if split.hovered() || split.dragged() {
+            ui.ctx().set_cursor_icon(CursorIcon::ResizeHorizontal);
+        }
+        if split.dragged() {
+            self.label_width =
+                (self.label_width + ui.input(|i| i.pointer.delta().x)).clamp(140., 420.);
+        }
+        if let Some(pointer) = ui
+            .input(|i| i.pointer.hover_pos())
+            .filter(|p| lane.contains(*p))
+        {
+            let factor = ui.input(|i| {
+                let native: f64 = i
+                    .events
+                    .iter()
+                    .filter_map(|e| {
+                        if let Event::Zoom(v) = e {
+                            Some(*v as f64)
+                        } else {
+                            None
+                        }
+                    })
+                    .product();
+                if native != 1. {
+                    native
+                } else if i.modifiers.ctrl || i.modifiers.command {
+                    (i.smooth_scroll_delta.y as f64 * 0.01).exp()
+                } else {
+                    1.
+                }
+            });
+            if factor.is_finite() && factor > 0. && factor != 1. {
+                let fraction = ((pointer.x - lane.left()) / lane.width()).clamp(0., 1.) as f64;
+                let anchor = self.start + fraction * s.editor.duration / self.zoom;
+                self.zoom = (self.zoom * factor).clamp(1., 64.);
+                self.start = (anchor - fraction * s.editor.duration / self.zoom).clamp(
+                    0.,
+                    (s.editor.duration - s.editor.duration / self.zoom).max(0.),
+                );
+                ui.input_mut(|i| i.smooth_scroll_delta.y = 0.);
+            }
+        }
         let pps = lane.width() as f64 / (s.editor.duration / self.zoom);
         let view_start = self.start;
         let x = |time: f64| lane.left() + ((time - view_start) * pps) as f32;
         let painter = ui.painter().with_clip_rect(rect);
         painter.rect_filled(rect, 0., Color32::from_rgb(29, 34, 40));
-        for i in 0..=8 {
-            let t = self.start + i as f64 * s.editor.duration / self.zoom / 8.;
+        let step = workflow_ui::ruler_step(
+            s.editor.duration / self.zoom,
+            lane.width() as f64,
+            s.editor.fps,
+        );
+        let first = (self.start / step).ceil() as i64;
+        let last = ((self.start + s.editor.duration / self.zoom) / step).floor() as i64;
+        for i in first..=last {
+            let t = i as f64 * step;
             let px = x(t);
             painter.line_segment(
                 [pos2(px, rect.top()), pos2(px, rect.bottom())],
                 Stroke::new(1., Color32::from_gray(55)),
             );
             painter.text(
-                pos2(px + 3., rect.top() + 4.),
+                pos2(px + 3., rect.top() + 11.),
                 Align2::LEFT_TOP,
                 format!("{t:.2}s"),
                 FontId::monospace(10.),
@@ -604,7 +634,12 @@ impl TimelineUi {
             );
         }
         let ruler = Rect::from_min_max(lane.min, pos2(lane.right(), rect.top() + row));
-        let rr = ui.interact(ruler, ui.id().with("ruler"), Sense::click_and_drag());
+        self.work_area(ui, s, &painter, ruler, pps);
+        let rr = ui.interact(
+            Rect::from_min_max(pos2(ruler.left(), ruler.top() + 11.), ruler.max),
+            ui.id().with("ruler"),
+            Sense::click_and_drag(),
+        );
         if (rr.clicked() || rr.dragged())
             && let Some(pos) = rr.interact_pointer_pos()
         {
@@ -661,9 +696,12 @@ impl TimelineUi {
             }
             let name = Rect::from_min_max(
                 pos2(rect.left() + 30., y - row * 0.5),
-                pos2(lane.left(), y + row * 0.5),
+                pos2(
+                    lane.left() - if label >= 240. { 68. } else { 0. },
+                    y + row * 0.5,
+                ),
             );
-            painter.text(
+            painter.with_clip_rect(name).text(
                 name.left_center(),
                 Align2::LEFT_CENTER,
                 property_name.as_str(),
@@ -675,10 +713,28 @@ impl TimelineUi {
                 .clicked()
             {
                 self.active_layer = Some(layer.id.clone());
-                s.editor.selected = s.editor.doc.tracks[c]
+                let ids: std::collections::BTreeSet<String> = s.editor.doc.tracks[c]
                     .iter()
                     .map(|k| k.id.clone())
                     .collect();
+                if ui.input(|i| i.modifiers.shift) {
+                    if !ids.is_empty() && ids.iter().all(|id| s.editor.selected.contains(id)) {
+                        s.editor.selected.retain(|id| !ids.contains(id));
+                    } else {
+                        s.editor.selected.extend(ids);
+                    }
+                } else {
+                    s.editor.selected = ids;
+                }
+            }
+            if label >= 240. {
+                painter.text(
+                    pos2(lane.left() - 9., y),
+                    Align2::RIGHT_CENTER,
+                    format!("{:.2}", s.editor.doc.sample_track(c, s.editor.time)),
+                    FontId::monospace(10.),
+                    Color32::LIGHT_GRAY,
+                );
             }
             let keys = s.editor.doc.tracks[c].clone();
             for k in keys {
@@ -1073,7 +1129,31 @@ impl eframe::App for TimelineUi {
             self.shortcuts(ui.ctx(), &mut s);
         }
         let enabled = !s.disabled && s.enabled;
-        ui.add_enabled_ui(enabled,|ui|{ScrollArea::vertical().show(ui,|ui|{self.toolbar(ui,&mut s);ui.separator();self.tracks(ui,&mut s);ui.separator();self.inspector(ui,&mut s);if !s.error.is_empty(){ui.colored_label(Color32::LIGHT_RED,&s.error);}ui.weak("F9 Easy Ease · Shift+F9 entrada · Ctrl+Shift+F9 saída · Ctrl+C/V · Ctrl+Z · Delete");});});
+        ui.add_enabled_ui(enabled, |ui| {
+            self.toolbar(ui, &mut s);
+            if !s.error.is_empty() {
+                ui.colored_label(Color32::LIGHT_RED, &s.error);
+            }
+            ui.separator();
+            let available = ui.available_height();
+            let track_height = if s.curves {
+                (available * 0.45).max(80.)
+            } else {
+                (available - 100.).max(80.)
+            };
+            ScrollArea::vertical()
+                .id_salt("property_tracks")
+                .max_height(track_height)
+                .show(ui, |ui| {
+                    self.tracks(ui, &mut s);
+                });
+            ui.separator();
+            ScrollArea::vertical()
+                .id_salt("key_inspector")
+                .show(ui, |ui| {
+                    self.inspector(ui, &mut s);
+                });
+        });
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(if s.playing {
                 8
@@ -1167,7 +1247,9 @@ mod tests {
             enabled: true,
             ..Default::default()
         }));
-        (Context::default(), TimelineUi::new(shared.clone()), shared)
+        let mut view = TimelineUi::new(shared.clone());
+        view.label_width = 172.;
+        (Context::default(), view, shared)
     }
     #[test]
     fn egui_drag_keeps_property_identity_and_commits_one_undo() {

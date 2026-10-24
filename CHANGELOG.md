@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.9.0 — 2026-10-24
+
+- Keep timeline transport/menus fixed, with separate scrolling for tracks and inspector; group editing/interpolation/time/preset/view controls into compact menus.
+- Add a resizable property column with live values, fit-selection, cursor-anchored wheel/gesture zoom, adaptive ruler and absolute frame counter.
+- Add editable native motion presets: fade in/out, pin pop, pin pulse and route draw, with single-step undo and preservation of keys outside the effect interval.
+- Add proportional duration changes with temporal speed scaling, layer sequencing/alignment at the playhead and Shift-click group selection. Reject collisions, bounds violations and locked edits atomically.
+- Add draggable preview-range handles and B/N shortcuts; reset preview range when composition duration changes.
+- Validate with 131 Rust tests, 68 JavaScript tests, compiled WASM sampling and production build. Real-browser visual/WebGL/media validation remains blocked by the CUA volume E: initialization failure.
+
+
 ## v0.8.0 — 2026-10-23
 
 - Add Rust layer/property tracks for pins, geographic features and route styling, with stable property identities and saved layer animation.

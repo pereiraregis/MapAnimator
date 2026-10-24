@@ -16,10 +16,10 @@ fs.writeFileSync('client/public/rust/package.json','{"type":"module"}\n');
 const hash=crypto.createHash('sha256');
 const sourceFiles=['rust-toolchain.toml','rust/Cargo.toml','rust/Cargo.lock','rust/timeline-core/Cargo.toml','rust/timeline-web/Cargo.toml','rust/vendor/effectcraft/UPSTREAM.json'];for(const dir of ['rust/timeline-core/src','rust/timeline-web/src'])for(const file of fs.readdirSync(dir).filter(f=>f.endsWith('.rs')).sort())sourceFiles.push(path.join(dir,file));for(const file of sourceFiles)hash.update(fs.readFileSync(file,'utf8').replaceAll('\r\n','\n'));
 const sha=crypto.createHash('sha256').update(fs.readFileSync('client/public/rust/mapanimator_web_bg.wasm')).digest('hex');
-fs.writeFileSync('client/public/rust/build-info.json',JSON.stringify({version:'0.8.0',upstream:'357b4c5bd531f9032ad6dc02937dcc75ab293ee9',bindings:required,compiler:spawnSync('rustc',['--version'],{encoding:'utf8'}).stdout.trim(),sourceSha256:hash.digest('hex'),wasmSha256:sha},null,2)+'\n');
+fs.writeFileSync('client/public/rust/build-info.json',JSON.stringify({version:'0.9.0',upstream:'357b4c5bd531f9032ad6dc02937dcc75ab293ee9',bindings:required,compiler:spawnSync('rustc',['--version'],{encoding:'utf8'}).stdout.trim(),sourceSha256:hash.digest('hex'),wasmSha256:sha},null,2)+'\n');
 const cargoHome=process.env.CARGO_HOME||path.join(process.env.USERPROFILE||process.env.HOME,'.cargo');
 const registries=fs.readdirSync(path.join(cargoHome,'registry/src')).map(d=>path.join(cargoHome,'registry/src',d));
-let notices='Rust dependency notices — MapAnimator v0.8.0\nIncludes resolved Cargo.lock dependencies; some platform-specific crates are not in the web binary.\n';
+let notices='Rust dependency notices — MapAnimator v0.9.0\nIncludes resolved Cargo.lock dependencies; some platform-specific crates are not in the web binary.\n';
 const missing=[];
 for(const entry of lock.split('[[package]]').slice(1)){
   if(!entry.includes('registry+'))continue;const name=entry.match(/name = "([^"]+)"/)[1],v=entry.match(/version = "([^"]+)"/)[1];const dir=registries.map(r=>path.join(r,`${name}-${v}`)).find(fs.existsSync);if(!dir)continue;
